@@ -24,9 +24,8 @@ apidoc:
 doc: apidoc build
 	INPUT=src/doc/ \
 	    INDEX=README.md \
-	    TITLE_PREFIX="Ksinai: " \
+	    TITLE_PREFIX="Trakeva: " \
 	    OUTPUT_DIR=_doc \
-	    COMMAND_SUBSTITUTIONS=vcshootout:./vcshootout,kserver:./kserver  \
 	    API=_apidoc \
 	    CATCH_MODULE_PATHS='^(Trakeva[A-Z_a-z]+):', \
 	    TITLE_SUBSTITUTIONS="main.ml:Literate Tests" \
