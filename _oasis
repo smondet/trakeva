@@ -1,0 +1,22 @@
+OASISFormat: 0.4
+Name:        trakeva
+Version:     0.0.0
+Synopsis:    Transactions, Keys, and Values: Common interface to various databases
+Authors:     Sebastien Monde <seb@mondet.org>
+License:     ISC
+Plugins:     META (0.4)
+
+Library trakeva
+  Path:       src/lib
+  BuildTools: ocamlbuild
+  BuildDepends: nonstd, threads, pvem_lwt_unix
+  Modules:    Trakeva_interface, Trakeva_git_commands
+
+
+Executable trakeva_tests
+  Path: src/test/
+  BuildTools: ocamlbuild
+  CompiledObject: best
+  BuildDepends: trakeva
+  MainIs:     main.ml
+
