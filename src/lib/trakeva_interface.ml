@@ -17,10 +17,15 @@
 (** A key-value database API with basic transactions. *)
 
 open Pvem_lwt_unix
+open Nonstd
 
 module Key_in_collection = struct
   type t = {key: string ; collection: string option}
   let create ?collection key = {key; collection}
+
+  let to_string {key; collection} =
+    sprintf "{%s/%s}" Option.(value collection ~default:"") key
+
 end
 
 module Action : sig
@@ -48,6 +53,9 @@ module Action : sig
 
   val unset: ?collection:string -> string -> t
   (** An actions that removes a value from the DB. *)
+
+  val to_string: t -> string
+  (** Convert the action to a display friendly string *)
 end = struct
 
   type t =
@@ -61,6 +69,16 @@ end = struct
   let contains ?collection ~key v = Check (_key ?collection key, Some v) 
   let is_not_set ?collection key = Check (_key ?collection key, None)
   let unset ?collection key = Unset (_key ?collection key)
+  let rec to_string (t: t) =
+    match t with
+    | Set (k, v) -> sprintf "(set %s %S)" (Key_in_collection.to_string k) v
+    | Unset k -> sprintf "(unset %s)" (Key_in_collection.to_string k)
+    | Sequence l -> sprintf "(sequence %s)" (List.map l ~f:to_string
+                                             |> StringLabels.concat ~sep:" ")
+    | Check (k, v) ->
+      sprintf "(check %s %s)" (Key_in_collection.to_string k)
+        (Option.value_map ~default:"None" v ~f:(sprintf "(Some %S)"))
+
 end
 
 module Error : sig
@@ -69,11 +87,22 @@ module Error : sig
     | `Load of string | `Close
   ] * string
     (** Merge of the possible errors. *)
+
+  val to_string: t -> string
 end = struct
   type t = [
     | `Act of Action.t | `Get of Key_in_collection.t | `Get_all of string
     | `Load of string | `Close
   ] * string
+
+  let to_string (t : t) =
+    match t with
+    | (`Act k, e) -> sprintf "[Executing %s, Error: %s]" (Action.to_string k) e
+    | (`Close, e) -> sprintf "[Closing, %s]" e
+    | (`Get k, e) ->
+      sprintf "[Getting %s, Error: %s]" (Key_in_collection.to_string k) e
+    | (`Get_all c, e) -> sprintf "[Getting-all-in %s, Error: %s]" c e
+    | (`Load u, e) -> sprintf "[Loading %S, Error: %s]" u e
 end
 
 module type KEY_VALUE_STORE = sig
