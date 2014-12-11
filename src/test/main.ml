@@ -46,155 +46,170 @@ module Test = struct
     >>= fun () ->
     return db_file
 
+  let run_monad name f =
+    Lwt_main.run (f ())
+    |> function
+    | `Ok () -> ()
+    | `Error (`Database e) ->
+      ksprintf fail "%S ends with error: %s" name
+        (Trakeva_interface.Error.to_string e)
 end
 
-let mini_db_test () =
-  Lwt_main.run begin
-    let module DB = Trakeva_git_commands in
-    let open Trakeva_interface.Action in
-    Test.new_tmp_dir ()
-    >>= fun db_file ->
-    DB.load db_file
-    >>= fun db ->
-    DB.get db ~key:"k"
-    >>= fun res ->
-    begin match res with
-    | None -> return ()
-    | Some v -> Test.fail (sprintf "key k got %S" v); return ()
+  
+module type TEST_DATABASE = sig
+  val test_name: string
+  module DB: Trakeva_interface.KEY_VALUE_STORE
+end
+
+let basic_test (module Test : TEST_DATABASE) uri_string () =
+  let open Test in
+  DB.load uri_string
+  >>= fun db ->
+  DB.close db
+
+let git_db_test () =
+  let module DB = Trakeva_git_commands in
+  let open Trakeva_interface.Action in
+  Test.new_tmp_dir ()
+  >>= fun db_file ->
+  DB.load db_file
+  >>= fun db ->
+  DB.get db ~key:"k"
+  >>= fun res ->
+  begin match res with
+  | None -> return ()
+  | Some v -> Test.fail (sprintf "key k got %S" v); return ()
+  end
+  >>= fun () ->
+  begin DB.act db DB.(seq [ is_not_set "k"; set ~key:"k" "V" ])
+    >>= function
+    | `Done -> return ()
+    | `Not_done -> Test.fail "seq 1 not done"; return ()
+  end
+  >>= fun () ->
+  let check_k current_db =
+    begin DB.get current_db ~key:"k" >>= function
+      | Some v when v = "V" -> return ()
+      | None -> Test.fail (sprintf "get k got None"); return ()
+      | Some v -> Test.fail (sprintf "get k got %S" v); return ()
+    end
+  in
+  check_k db >>= fun () ->
+  DB.close db >>= fun () ->
+  DB.load db_file
+  >>= fun db2 ->
+  check_k db2 >>= fun () ->
+  begin DB.act db2 DB.(seq [contains ~key:"k" "V"])
+    >>= function
+    | `Done -> return ()
+    | `Not_done -> Test.fail "seq 2 not done"; return ()
+  end
+  >>= fun () ->
+  (* Transation that fails: *)
+  begin DB.act db2 DB.(seq [
+      set ~key:"k2" "vvv";
+      set ~collection:"c3" ~key:"k3" "vvv";
+      set ~key:"k2" "uuu";
+      contains ~key:"k" "u"])
+    >>= function
+    | `Not_done -> return ()
+    | `Done -> Test.fail "seq 3 done"; return ()
+  end
+  >>= fun () ->
+  (* Transation that succeeds: *)
+  begin DB.act db2 DB.(seq [
+      is_not_set "k2";
+      set ~key:"k2" "vvv";
+      contains ~key:"k2" "vvv";
+      set ~key:"k2" "uuu";
+      contains ~key:"k" "V";
+      contains ~key:"k2" "uuu";
+      unset "k2";
+      is_not_set "k2";
+    ])
+    >>= function
+    | `Done -> return ()
+    | `Not_done -> Test.fail "seq 4 not done"; return ()
+  end
+  >>= fun () ->
+  (* Transations that fail hard: *)
+  let test_with_debug_artificial_failure name f =
+    DB.Debug.(global_debug := f "k2");
+    begin
+      Lwt.catch (fun () ->
+          DB.act db2 DB.(seq [
+              set ~key:"k2" "rrr";
+              set ~key:"k2" "uuu";
+              unset "k2";
+            ])
+          >>< function
+          | _ -> Test.fail (sprintf "seq %s not exn" name); return ())
+        (fun e -> return ())
     end
     >>= fun () ->
-    begin DB.act db DB.(seq [ is_not_set "k"; set ~key:"k" "V" ])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail "seq 1 not done"; return ()
-    end
-    >>= fun () ->
-    let check_k current_db =
-      begin DB.get current_db ~key:"k" >>= function
-        | Some v when v = "V" -> return ()
-        | None -> Test.fail (sprintf "get k got None"); return ()
-        | Some v -> Test.fail (sprintf "get k got %S" v); return ()
-      end
-    in
-    check_k db >>= fun () ->
-    DB.close db >>= fun () ->
-    DB.load db_file
-    >>= fun db2 ->
-    check_k db2 >>= fun () ->
-    begin DB.act db2 DB.(seq [contains ~key:"k" "V"])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail "seq 2 not done"; return ()
-    end
-    >>= fun () ->
-    (* Transation that fails: *)
-    begin DB.act db2 DB.(seq [
-        set ~key:"k2" "vvv";
-        set ~collection:"c3" ~key:"k3" "vvv";
-        set ~key:"k2" "uuu";
-        contains ~key:"k" "u"])
-      >>= function
-      | `Not_done -> return ()
-      | `Done -> Test.fail "seq 3 done"; return ()
-    end
-    >>= fun () ->
-    (* Transation that succeeds: *)
+    DB.Debug.(global_debug := No);
+    (* We should be like end of seq 6 *)
     begin DB.act db2 DB.(seq [
         is_not_set "k2";
-        set ~key:"k2" "vvv";
-        contains ~key:"k2" "vvv";
-        set ~key:"k2" "uuu";
-        contains ~key:"k" "V";
-        contains ~key:"k2" "uuu";
-        unset "k2";
-        is_not_set "k2";
+        set ~collection:"c3" ~key:"k3" "uuu";
+        unset ~collection:"c3" "k3";
+        unset ~collection:"c3" "k3";
       ])
       >>= function
       | `Done -> return ()
-      | `Not_done -> Test.fail "seq 4 not done"; return ()
+      | `Not_done -> Test.fail (sprintf "seq %s+1 not done" name); return ()
     end
-    >>= fun () ->
-    (* Transations that fail hard: *)
-    let test_with_debug_artificial_failure name f =
-      DB.Debug.(global_debug := f "k2");
-      begin
-        Lwt.catch (fun () ->
-            DB.act db2 DB.(seq [
-                set ~key:"k2" "rrr";
-                set ~key:"k2" "uuu";
-                unset "k2";
-              ])
-            >>< function
-            | _ -> Test.fail (sprintf "seq %s not exn" name); return ())
-          (fun e -> return ())
-      end
-      >>= fun () ->
-      DB.Debug.(global_debug := No);
-      (* We should be like end of seq 6 *)
-      begin DB.act db2 DB.(seq [
-          is_not_set "k2";
-          set ~collection:"c3" ~key:"k3" "uuu";
-          unset ~collection:"c3" "k3";
-          unset ~collection:"c3" "k3";
-        ])
-        >>= function
-        | `Done -> return ()
-        | `Not_done -> Test.fail (sprintf "seq %s+1 not done" name); return ()
-      end
-    in
-    test_with_debug_artificial_failure "After_write"
-      (fun k -> DB.Debug.After_write k)
-    >>= fun () ->
+  in
+  test_with_debug_artificial_failure "After_write"
+    (fun k -> DB.Debug.After_write k)
+  >>= fun () ->
+  test_with_debug_artificial_failure "After_git_add"
+    (fun k -> DB.Debug.After_git_add k)
+  >>= fun () ->
+  test_with_debug_artificial_failure "After_git_rm"
+    (fun k -> DB.Debug.After_git_rm k)
+  >>= fun () ->
+  let check_collection collection result =
+    let check r =
+      let sort = List.sort ~cmp:String.compare in
+      sort r = sort result in
+    DB.get_all db2 ~collection
+    >>= function
+    | r when check r -> return ()
+    | other ->
+      Test.fail (sprintf "Collection test: in %S  \nexpecting [%s]  \ngot [%s]"
+                   collection (String.concat ~sep:", " result)
+                   (String.concat ~sep:", " other));
+      return ()
+  in
+  check_collection "" [] >>= fun () ->
+  check_collection "aslkdj" [] >>= fun () ->
+  check_collection "c3" [] >>= fun () ->
+  let collection = "c3" in
+  DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
+                      set ~collection ~key:"k2" "v2"])
+  >>= fun _ ->
+  check_collection collection ["v1"; "v2"] >>= fun () ->
+  let collection = "c4" in
+  DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
+                      set ~collection ~key:"k2" "v2"])
+  >>= fun _ ->
+  check_collection collection ["v1"; "v2"] >>= fun () ->
+  (* check_collection "c3" ["sld"] >>= fun () -> *)
+  return ()
 
-    test_with_debug_artificial_failure "After_git_add"
-      (fun k -> DB.Debug.After_git_add k)
-    >>= fun () ->
-    test_with_debug_artificial_failure "After_git_rm"
-      (fun k -> DB.Debug.After_git_rm k)
-    >>= fun () ->
-    let check_collection collection result =
-      let check r =
-        let sort = List.sort ~cmp:String.compare in
-        sort r = sort result in
-      DB.get_all db2 ~collection
-      >>= function
-      | r when check r -> return ()
-      | other ->
-        Test.fail (sprintf "Collection test: in %S  \nexpecting [%s]  \ngot [%s]"
-                     collection (String.concat ~sep:", " result)
-                     (String.concat ~sep:", " other));
-        return ()
-    in
-    check_collection "" [] >>= fun () ->
-    check_collection "aslkdj" [] >>= fun () ->
-    check_collection "c3" [] >>= fun () ->
-    let collection = "c3" in
-    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
-                        set ~collection ~key:"k2" "v2"])
-    >>= fun _ ->
-    check_collection collection ["v1"; "v2"] >>= fun () ->
-    let collection = "c4" in
-    DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
-                        set ~collection ~key:"k2" "v2"])
-    >>= fun _ ->
-    check_collection collection ["v1"; "v2"] >>= fun () ->
-    (* check_collection "c3" ["sld"] >>= fun () -> *)
-
-    return ()
-  end
-  |> function
-  | `Ok () -> ()
-  | `Error e ->
-    Test.fail "mini_db_test ends with error"
-
-
-
-
-
+module Test_git_commands = struct
+  let test_name = "Test_git_commands"
+  module DB = Trakeva_git_commands
+end
 
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
-  mini_db_test ();
+  Test.run_monad "git-db" git_db_test;
+  Test.run_monad "basic with git"
+    (basic_test (module Test_git_commands)
+       (* (Filename.temp_dir_name // "basic-with-git")); *)
+       "/impossible");
   begin match !Test.failed_tests with
   | [] ->
     say "No tests failed \\o/ (arg-list: [%s])"
