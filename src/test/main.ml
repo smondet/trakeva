@@ -51,6 +51,7 @@ end
 let mini_db_test () =
   Lwt_main.run begin
     let module DB = Trakeva_git_commands in
+    let open Trakeva_interface.Action in
     Test.new_tmp_dir ()
     >>= fun db_file ->
     DB.load db_file

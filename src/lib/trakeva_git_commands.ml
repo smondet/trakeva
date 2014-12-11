@@ -96,27 +96,13 @@ let unique_id () =
 let global_debug_level = ref 4
 let local_verbosity () = `Debug !global_debug_level
 
-type key = {key: string ; collection: string option}
-
-type action =
-  | Set of key * string
-  | Unset of key
-  | Sequence of action list
-  | Check of key * string option
+open Trakeva_interface.Action
+open Trakeva_interface.Key_in_collection
 let _key ?collection key = {key; collection}
-let set ?collection ~key value = Set (_key ?collection key, value)
-let seq l = Sequence l
-let contains ?collection ~key v = Check (_key ?collection key, Some v) 
-let is_not_set ?collection key = Check (_key ?collection key, None)
-let unset ?collection key = Unset (_key ?collection key)
 
 let key_to_string {key;collection} =
   Option.value_map collection ~f:(sprintf "%s/") ~default:"" ^ key
-
-type error =
-  [ `Act of action | `Get of key | `Get_all of string
-  | `Load of string | `Close ] * string
-
+  
 module Cache = struct
 
   type collection = {
