@@ -5,7 +5,7 @@ all: build
 
 configure: distclean
 	oasis setup -setup-update dynamic && \
-	    ocaml setup.ml -configure && \
+	    ocaml setup.ml -configure --enable-all && \
 	    echo 'Configured'
 
 build:
