@@ -15,10 +15,11 @@ build:
 
 apidoc:
 	mkdir -p _apidoc && \
-	ocamlfind ocamldoc -html -d _apidoc/ -package ketrew  \
+	ocamlfind ocamldoc -html -d _apidoc/ -package nonstd,pvem_lwt_unix,sqlite3  \
 	    -thread  -charset UTF-8 -t "Trakeva API" -keep-code -colorize-code \
 	    -sort \
 	    -I _build/src/lib/ \
+	    -I _build/src/lib_sqlite/ \
 	    src/*/*.mli src/*/*.ml
 
 doc: apidoc build

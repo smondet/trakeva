@@ -1,6 +1,10 @@
 B _build/src/lib/
+B _build/src/lib_sqlite/
 B _build/src/test/
 S src/lib/
+S src/lib_sqlite/
 S src/test/
 PKG nonstd
 PKG pvem_lwt_unix
+PKG sqlite3
+PKG lwt.preemptive

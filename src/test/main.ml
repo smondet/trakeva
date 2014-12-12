@@ -39,12 +39,10 @@ module Test = struct
     ) else ()
 
   let new_tmp_dir () =
-    let db_file = Filename.concat (Sys.getcwd ()) "_tmp_test"  in
-    begin System.Shell.do_or_fail (sprintf "rm -rf %s" db_file)
-      >>< fun _ -> return ()
-    end
-    >>= fun () ->
-    return db_file
+    let db_file = Filename.temp_file  "trakeva_tmp_test" ".d" in
+    Sys.command (sprintf "rm -rf %s" db_file) |> ignore;
+    Sys.command (sprintf "mkdir -p %s" db_file) |> ignore;
+    db_file
 
   let run_monad name f =
     Lwt_main.run (f ())
@@ -53,6 +51,10 @@ module Test = struct
     | `Error (`Database e) ->
       ksprintf fail "%S ends with error: %s" name
         (Trakeva_interface.Error.to_string e)
+
+  let check names c =
+    if c then ()
+    else ksprintf fail "test.assert failed: %s" (String.concat ~sep:" → " names)
 end
 
   
@@ -61,17 +63,71 @@ module type TEST_DATABASE = sig
   module DB: Trakeva_interface.KEY_VALUE_STORE
 end
 
-let basic_test (module Test : TEST_DATABASE) uri_string () =
-  let open Test in
+let open_close_test (module Test_db : TEST_DATABASE) uri_string () =
+  let open Test_db in
   DB.load uri_string
   >>= fun db ->
+  DB.close db
+
+let basic_test (module Test_db : TEST_DATABASE) uri_string () =
+  let open Test_db in
+  let open Trakeva_interface.Action in
+  let local_assert name c =
+    Test.check (name :: test_name :: uri_string :: []) c in
+  DB.load uri_string
+  >>= fun db ->
+  let test_get ?(handle=db) ?collection k f =
+    DB.get handle ?collection ~key:k
+    >>= fun opt ->
+    local_assert (sprintf "get %s/%s" (Option.value collection ~default:"") k)
+      (f opt);
+    return () in
+  let is_none = ((=) None) in
+  test_get "k" is_none >>= fun () ->
+  test_get ~collection:"c" "k" is_none >>= fun () ->
+  DB.get_all db ~collection:"c"
+  >>= fun list ->
+  local_assert "all c" (list = []);
+  let test_actions res actions =
+    let action = seq actions in
+    DB.act db ~action
+    >>= function
+    | r when r = res -> return ()
+    | `Done ->
+      ksprintf Test.fail "Action %s should be Not_done" (to_string action);
+      return ()
+    | `Not_done ->
+      ksprintf Test.fail "Action %s should be Done" (to_string action);
+      return ()
+  in
+  test_actions `Done [set ~key:"k" "v"] >>= fun () ->
+  test_get  "k" ((=) (Some "v")) >>= fun () ->
+  test_actions `Done [
+    contains ~key:"k" "v";
+    unset "k";
+    set ~key:"k1" ~collection:"c" "V";
+  ] >>= fun () ->
+  test_actions `Not_done [
+    contains ~key:"k" "v";
+    set ~key:"k1" ~collection:"c" "V";
+  ] >>= fun () ->
+  test_actions `Done [
+    is_not_set "k";
+    set ~key:"k2" ~collection:"c" "V2";
+    set ~key:"k3" ~collection:"c" "V3";
+    set ~key:"k4" ~collection:"c" "V4";
+    set ~key:"k5" ~collection:"c" "V5";
+  ] >>= fun () ->
+  DB.get_all db ~collection:"c"
+  >>= fun list ->
+  local_assert "full collection 'c'"
+    (List.sort ~cmp:String.compare list = ["V"; "V2"; "V3"; "V4"; "V5"]);
   DB.close db
 
 let git_db_test () =
   let module DB = Trakeva_git_commands in
   let open Trakeva_interface.Action in
-  Test.new_tmp_dir ()
-  >>= fun db_file ->
+  let db_file  = Test.new_tmp_dir () in
   DB.load db_file
   >>= fun db ->
   DB.get db ~key:"k"
@@ -202,14 +258,19 @@ module Test_git_commands = struct
   let test_name = "Test_git_commands"
   module DB = Trakeva_git_commands
 end
+module Test_sqlite = struct
+  let test_name = "Test_sqlite" 
+  module DB = Trakeva_sqlite
+end
 
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
   Test.run_monad "git-db" git_db_test;
   Test.run_monad "basic with git"
-    (basic_test (module Test_git_commands)
-       (* (Filename.temp_dir_name // "basic-with-git")); *)
-       "/impossible");
+    (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
+  let sqlite_path = "/tmp/trakeva-sqlite-test" in
+  ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+  Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
   begin match !Test.failed_tests with
   | [] ->
     say "No tests failed \\o/ (arg-list: [%s])"

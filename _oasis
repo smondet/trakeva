@@ -12,11 +12,18 @@ Library trakeva
   BuildDepends: nonstd, threads, pvem_lwt_unix
   Modules:    Trakeva_interface, Trakeva_git_commands
 
+Library trakeva_sqlite
+  Path:       src/lib_sqlite
+  BuildTools: ocamlbuild
+  BuildDepends: trakeva, sqlite3, lwt.preemptive
+  Modules:    Trakeva_sqlite
+
 
 Executable trakeva_tests
   Path: src/test/
   BuildTools: ocamlbuild
   CompiledObject: best
-  BuildDepends: trakeva
+  BuildDepends: trakeva, trakeva_sqlite
+  Install: false
   MainIs:     main.ml
 
