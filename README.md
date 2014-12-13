@@ -31,8 +31,18 @@ As a developer, just run:
     make configure
     make
 
-(this will enable all backends).
+(this will enable all backends and the tests).  The tests/benchmarks also depend
+on [Sosa](http://seb.mondet.org/software/sosa/index.html) (`opam install sosa`).
 
+To run the unit tests:
+
+    ./trakeva_tests
+
+To run the benchmarks:
+
+    ./trakeva_tests bench collection=100 kb=5     # quick bench
+    ./trakeva_tests bench collection=1000 kb=20   # about a minute long
+ 
 To build the documentation:
 
     make doc
