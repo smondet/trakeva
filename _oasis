@@ -14,6 +14,10 @@ Flag sqlite
   Description: Build the Sqlite backend
   Default$: flag(all)
 
+Flag test
+  Description: Build the Tests (requires Sosa)
+  Default$: flag(all)
+
 Library trakeva
   Path:       src/lib
   BuildTools: ocamlbuild
@@ -21,7 +25,7 @@ Library trakeva
   Modules:    Trakeva_interface, Trakeva_git_commands
 
 Library trakeva_sqlite
-  Build$: flag(sqlite) || flag(all)
+  Build$: flag(sqlite) || flag(all) || falg(test)
   Install$: flag(sqlite) || flag(all)
   Path:       src/lib_sqlite
   BuildTools: ocamlbuild
@@ -33,8 +37,9 @@ Executable trakeva_tests
   Path: src/test/
   BuildTools: ocamlbuild
   CompiledObject: best
-  BuildDepends: trakeva, trakeva_sqlite
-  Build$: flag(sqlite) || flag(all)
+  BuildDepends: trakeva, trakeva_sqlite, sosa
+  Build$: flag(sqlite) || flag(all) || flag(test)
+  Install$: flag(sqlite) || flag(all)
   Install: false
   MainIs:     main.ml
 

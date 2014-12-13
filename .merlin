@@ -7,4 +7,5 @@ S src/test/
 PKG nonstd
 PKG pvem_lwt_unix
 PKG sqlite3
+PKG sosa
 PKG lwt.preemptive

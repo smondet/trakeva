@@ -17,7 +17,7 @@
 open Nonstd
 open Pvem_lwt_unix
 open Pvem_lwt_unix.Deferred_result
-module String = StringLabels
+module String = Sosa.Native_string 
 let (//) = Filename.concat
 
 let say fmt = ksprintf (printf "%s\n%!") fmt
@@ -55,6 +55,8 @@ module Test = struct
   let check names c =
     if c then ()
     else ksprintf fail "test.assert failed: %s" (String.concat ~sep:" → " names)
+
+  let now () = Unix.gettimeofday ()
 end
 
   
@@ -124,6 +126,58 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
     (List.sort ~cmp:String.compare list = ["V"; "V2"; "V3"; "V4"; "V5"]);
   DB.close db
 
+let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
+    ?(collection = 200) ?(big_string_kb = 10) () =
+  let open Test_db in
+  let open Trakeva_interface.Action in
+  let benches = ref [] in
+  let add_bench s t = benches := (s, t) :: !benches in
+  DB.load uri_string
+  >>= fun db ->
+  let bench_function s f =
+    let b = Test.now () in
+    f ()
+    >>= fun x ->
+    let e = Test.now () in
+    add_bench s (e -. b);
+    return x
+  in
+  let bench_action ~action s =
+    bench_function s (fun () -> DB.act db ~action:(seq action)) in
+  let action =
+    List.init collection (fun i ->
+        set ~key:(sprintf "k%d" i) ~collection:"c" "small")
+  in
+  bench_action ~action (sprintf "%d small strings" collection)
+  >>= fun _ ->
+  bench_action (sprintf "%d %d KB strings" collection big_string_kb) ~action:(
+    List.init collection (fun i ->
+        let value = String.make (big_string_kb * 1_000) 'B' in
+        set ~key:(sprintf "k%d" i) ~collection:"cc" value))
+  >>= fun _ ->
+  bench_function "Get all collection 'cc'" (fun () -> DB.get_all db "cc")
+  >>= fun cc ->
+  let l = List.length cc in
+  Test.check ["bench01"; "length cc"; Int.to_string l] (l = collection);
+  bench_function "Get all 'cc' one by one" (fun () ->
+      let rec loop n =
+        if n = 0
+        then return ()
+        else (
+          let key = sprintf "k%d" (n - 1) in
+          DB.get ~collection:"cc"  db ~key
+          >>= fun v ->
+          Test.check ["bench01"; key; "not none"; ] (v <> None);
+          loop (n - 1)
+        )
+      in
+      loop collection)
+  >>= fun _ ->
+  DB.close db
+  >>= fun () ->
+  return (test_name, List.rev !benches)
+
+  
 let git_db_test () =
   let module DB = Trakeva_git_commands in
   let open Trakeva_interface.Action in
@@ -263,14 +317,46 @@ module Test_sqlite = struct
   module DB = Trakeva_sqlite
 end
 
+let has_arg arlg possible =
+  List.exists arlg ~f:(List.mem ~set:possible)
+
+let find_arg argl ~name ~convert =
+  List.find_map argl (fun arg ->
+      match String.split ~on:(`Character '=') arg |> List.map ~f:String.strip with
+      | n :: c :: [] when n = name -> convert c
+      | _ -> None)
+
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
   Test.run_monad "git-db" git_db_test;
+
   Test.run_monad "basic with git"
     (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
+
+  if has_arg argl ["bench"; "benchmarks"] then (
+    ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+    let collection = find_arg argl ~name:"collection" ~convert:Int.of_string in
+    let big_string_kb = find_arg argl ~name:"kb" ~convert:Int.of_string in
+    Test.run_monad "bench01" (fun () ->
+        benchmark_01 ?collection ?big_string_kb
+          (module Test_git_commands) (Test.new_tmp_dir ()) ()
+        >>= fun (_, git_bench01) ->
+        benchmark_01 ?collection ?big_string_kb
+          (module Test_sqlite) sqlite_path ()
+        >>= fun (_, sqlite_bench01) ->
+        say "Bench01";
+        List.iter git_bench01 ~f:(fun (n, f) ->
+            say "git\t%s\t%F s" n f
+          );
+        List.iter sqlite_bench01 ~f:(fun (n, f) ->
+            say "sqlite\t%s\t%F s" n f
+          );
+        return ()
+      );
+  );
   begin match !Test.failed_tests with
   | [] ->
     say "No tests failed \\o/ (arg-list: [%s])"
