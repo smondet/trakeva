@@ -124,6 +124,13 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
   >>= fun list ->
   local_assert "full collection 'c'"
     (List.sort ~cmp:String.compare list = ["V"; "V2"; "V3"; "V4"; "V5"]);
+  let key = "K" in
+  test_actions `Done [
+    set ~key "\"";
+    set ~key "\\\"";
+    set ~key "\"'\"";
+  ]
+  >>= fun () ->
   DB.close db
 
 let benchmark_01 (module Test_db : TEST_DATABASE) uri_string

@@ -33,7 +33,16 @@ let in_posix_thread ~on_exn f =
     try `Ok (f ())
     with e -> on_exn e) ()
 
-let escape_blob = Filename.quote
+let escape_blob s = 
+  let b = Buffer.create (String.length s + 4) in
+  Buffer.add_char b '\'';
+  String.iter s ~f:(function
+    | '\'' -> Buffer.add_string b "''"
+    | other -> Buffer.add_char b other
+    );
+  Buffer.add_char b '\'';
+  Buffer.contents b
+
 
 let default_table = "trakeva_default_table"
 
