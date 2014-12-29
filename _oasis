@@ -2,7 +2,7 @@ OASISFormat: 0.4
 Name:        trakeva
 Version:     0.0.0
 Synopsis:    Transactions, Keys, and Values: Common interface to various databases
-Authors:     Sebastien Monde <seb@mondet.org>
+Authors:     Sebastien Mondet <seb@mondet.org>
 License:     Apache-2.0
 Plugins:     META (0.4)
 
