@@ -55,7 +55,9 @@ module Action : sig
   (** An actions that removes a value from the DB. *)
 
   val to_string: t -> string
-  (** Convert the action to a display friendly string *)
+  (** Convert the action to a display friendly string (the
+      implementation is quite naive and not tail-recursive, hence avoid
+      displaying huge transaction). *)
 end = struct
 
   type t =
