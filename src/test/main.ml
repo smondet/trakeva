@@ -50,7 +50,7 @@ module Test = struct
     | `Ok () -> ()
     | `Error (`Database e) ->
       ksprintf fail "%S ends with error: %s" name
-        (Trakeva_interface.Error.to_string e)
+        (Trakeva.Error.to_string e)
 
   let check names c =
     if c then ()
@@ -62,7 +62,7 @@ end
   
 module type TEST_DATABASE = sig
   val test_name: string
-  module DB: Trakeva_interface.KEY_VALUE_STORE
+  module DB: Trakeva.KEY_VALUE_STORE
 end
 
 let open_close_test (module Test_db : TEST_DATABASE) uri_string () =
@@ -73,7 +73,7 @@ let open_close_test (module Test_db : TEST_DATABASE) uri_string () =
 
 let basic_test (module Test_db : TEST_DATABASE) uri_string () =
   let open Test_db in
-  let open Trakeva_interface.Action in
+  let open Trakeva.Action in
   let local_assert name c =
     Test.check (name :: test_name :: uri_string :: []) c in
   DB.load uri_string
@@ -136,7 +136,7 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
 let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
     ?(collection = 200) ?(big_string_kb = 10) () =
   let open Test_db in
-  let open Trakeva_interface.Action in
+  let open Trakeva.Action in
   let benches = ref [] in
   let add_bench s t = benches := (s, t) :: !benches in
   DB.load uri_string
@@ -187,7 +187,7 @@ let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
   
 let git_db_test () =
   let module DB = Trakeva_git_commands in
-  let open Trakeva_interface.Action in
+  let open Trakeva.Action in
   let db_file  = Test.new_tmp_dir () in
   DB.load db_file
   >>= fun db ->

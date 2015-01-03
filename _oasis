@@ -22,7 +22,7 @@ Library trakeva
   Path:       src/lib
   BuildTools: ocamlbuild
   BuildDepends: nonstd, threads, pvem_lwt_unix
-  Modules:    Trakeva_interface, Trakeva_git_commands
+  Modules:    Trakeva, Trakeva_git_commands
 
 Library trakeva_sqlite
   Build$: flag(sqlite) || flag(all) || falg(test)

@@ -96,8 +96,8 @@ let unique_id () =
 let global_debug_level = ref 4
 let local_verbosity () = `Debug !global_debug_level
 
-open Trakeva_interface.Action
-open Trakeva_interface.Key_in_collection
+open Trakeva.Action
+open Trakeva.Key_in_collection
 let _key ?collection key = {key; collection}
 
 let key_to_string {key;collection} =

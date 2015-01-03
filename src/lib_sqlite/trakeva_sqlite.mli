@@ -19,7 +19,7 @@
 
 (** {3 Implementation of the API} *)
 
-include Trakeva_interface.KEY_VALUE_STORE
+include Trakeva.KEY_VALUE_STORE
 
 (** {3 Debugging } *)
 

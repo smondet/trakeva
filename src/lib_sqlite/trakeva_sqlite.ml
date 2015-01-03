@@ -172,7 +172,7 @@ let close {handle} =
     loop 5
   end
 
-open Trakeva_interface
+open Trakeva
 
 let get ?collection t ~key =
   let statement = get_statement default_table collection key in

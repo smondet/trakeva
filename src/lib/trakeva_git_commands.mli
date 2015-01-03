@@ -17,7 +17,7 @@
 
 (** {3 Implementation of the API} *)
 
-include Trakeva_interface.KEY_VALUE_STORE
+include Trakeva.KEY_VALUE_STORE
 
 val global_debug_level: int ref
 (** Debug-logging level used in the module (default: 4). *)

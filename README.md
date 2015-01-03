@@ -5,8 +5,8 @@ Transactions, Keys, and Values: an attempt at a generic interface for
 transactional key-value stores with different backends.
 
 
-The interfaces are defined in `Trakeva_interface`, we have, for now, two
-implementations of the module type `Trakeva_interface.KEY_VALUE_STORE`:
+The interfaces are defined in the `Trakeva` module, we have, for now, two
+implementations of the module type `Trakeva.KEY_VALUE_STORE`:
 
 - `Trakeva_git_commands` was extracted from
 [Ketrew](http://seb.mondet.org/software/ketrew/index.html), it uses the `git`
