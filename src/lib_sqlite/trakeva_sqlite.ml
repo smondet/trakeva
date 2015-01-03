@@ -190,6 +190,41 @@ let get_all t ~collection =
       exec_list_exn t.handle statement
     )
 
+let iterator t ~collection =
+  let statement = get_all_statement default_table (Some collection) in
+  let error_loc = `Iter collection in
+  let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
+  let state = ref None in
+  let next_exn prep =
+    if !debug then
+      dbg "exec: %S\n    → counts: %d, %d"
+        statement (Sqlite3.column_count prep) (Sqlite3.data_count prep);
+    try
+      let row, more_to_come  = get_row_exn prep in
+      begin match string_option_data_exn row with
+      | Some one ->
+        (Some one)
+      | None ->
+        let _ = Sqlite3.finalize prep in
+        None
+      end
+    with e ->
+      let _ = Sqlite3.finalize prep in
+      raise e
+  in
+  begin fun () ->
+    in_posix_thread ~on_exn (fun () ->
+        match !state with
+        | None ->
+          let prep = Sqlite3.prepare t.handle statement in
+          state := Some prep;
+          next_exn prep
+        | Some prep ->
+          next_exn prep
+      )
+  end
+
+
 let act t ~(action: Action.t) =
   let rec transact (action: Action.t) =
     let open Key_in_collection in

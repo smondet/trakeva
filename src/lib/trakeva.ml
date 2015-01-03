@@ -86,6 +86,7 @@ end
 module Error : sig
   type t = [
     | `Act of Action.t | `Get of Key_in_collection.t | `Get_all of string
+    | `Iter of string
     | `Load of string | `Close
   ] * string
     (** Merge of the possible errors. *)
@@ -95,6 +96,7 @@ end = struct
   type t = [
     | `Act of Action.t | `Get of Key_in_collection.t | `Get_all of string
     | `Load of string | `Close
+    | `Iter of string
   ] * string
 
   let to_string (t : t) =
@@ -105,6 +107,7 @@ end = struct
       sprintf "[Getting %s, Error: %s]" (Key_in_collection.to_string k) e
     | (`Get_all c, e) -> sprintf "[Getting-all-in %s, Error: %s]" c e
     | (`Load u, e) -> sprintf "[Loading %S, Error: %s]" u e
+    | (`Iter s, e) -> sprintf "[Iterating on %S, Error: %s]" s e
 end
 
 module type KEY_VALUE_STORE = sig
@@ -128,7 +131,13 @@ module type KEY_VALUE_STORE = sig
   val get_all: t -> collection:string ->
     (string list, [> `Database of [> `Get_all of string ] * string ])
       Deferred_result.t
-  (** Get all the values in a given collection. *)
+  (** Get all the values in a given collection as a list. *)
+
+  val iterator: t -> collection:string -> 
+    (unit ->
+     (string option, [> `Database of [> `Iter of string ] * string ]) Deferred_result.t)
+  (** Go through all the values in a given collection (exact semantics
+      versus concurrent writes still to be defined …). *)
 
   val act :
     t ->

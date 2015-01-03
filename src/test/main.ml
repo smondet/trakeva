@@ -131,6 +131,35 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
     set ~key "\"'\"";
   ]
   >>= fun () ->
+  let to_list res_stream =
+    let rec go acc =
+      res_stream ()
+      >>= function
+      | None -> return acc
+      | Some v -> go (v :: acc) in
+    go []
+  in
+  let check_iterator_like_get_all ~collection =
+    let stream = DB.iterator db ~collection in
+    to_list stream
+    >>= fun all ->
+    DB.get_all db ~collection
+    >>= fun all_too ->
+    let list_equal l1 l2 =
+      let prep = List.sort ~cmp:Pervasives.compare in
+      match prep l1 = prep l2 with
+      | true -> true
+      | false ->
+        say "[%s] ≠ [%s]"
+          (String.concat  ~sep:", " l1)
+          (String.concat  ~sep:", " l2);
+        false
+    in
+    local_assert (sprintf "iter %s" collection) (list_equal all all_too);
+    return ()
+  in
+  check_iterator_like_get_all "c" >>= fun () ->
+  check_iterator_like_get_all "cc" >>= fun () ->
   DB.close db
 
 let benchmark_01 (module Test_db : TEST_DATABASE) uri_string

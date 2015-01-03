@@ -348,6 +348,23 @@ let get_all t ~collection =
     | `Error (`System _ as e) ->
       dfail (System.error_to_string e)
 
+let iterator t ~collection =
+  let state = ref None in
+  begin fun () ->
+    match !state with
+    | None ->
+      begin
+        get_all t ~collection
+        >>< function
+        | `Ok [] -> return None
+        | `Ok (h :: t) -> state := Some t; return (Some h)
+        | `Error (`Database (`Get_all c, msg)) ->
+          fail (`Database (`Iter c, "get_all:" ^  msg))
+      end
+    | Some [] -> return None
+    | Some (h :: t) -> state := Some t; return (Some h)
+  end
+
 let act t ~action =
   let branch_name = unique_id () in
   let call_git = call_git ~loc:(`Act action) t in
