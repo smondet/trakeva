@@ -48,7 +48,9 @@ let default_table = "trakeva_default_table"
 
 (* https://www.sqlite.org/lang_createtable.html *)
 let create_table t =
-  sprintf "CREATE TABLE IF NOT EXISTS %s (collection BLOB, key BLOB PRIMARY KEY, value BLOB)" t
+  sprintf "CREATE TABLE IF NOT EXISTS %s \
+           (collection BLOB, key BLOB, value BLOB, \
+           PRIMARY KEY(key) ON CONFLICT REPLACE)" t
 
 let option_equals =
   function
@@ -61,8 +63,12 @@ let get_statement table collection key =
      (option_equals collection)
 
 let get_all_statement table collection =
-  sprintf "SELECT value FROM %s WHERE collection %s" table
+  sprintf "SELECT value FROM %s WHERE collection %s ORDER BY key" table
     (option_equals collection)
+
+let keys_statement table collection =
+  sprintf "SELECT DISTINCT key FROM %s WHERE collection %s"
+    table (option_equals collection)
 
 (*
 https://www.sqlite.org/lang_insert.html
@@ -191,19 +197,28 @@ let get_all t ~collection =
     )
 
 let iterator t ~collection =
-  let statement = get_all_statement default_table (Some collection) in
+  let keys_statement = keys_statement default_table (Some collection) in
   let error_loc = `Iter collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   let state = ref None in
-  let next_exn prep =
+  let rec next_exn prep =
     if !debug then
       dbg "exec: %S\n    → counts: %d, %d"
-        statement (Sqlite3.column_count prep) (Sqlite3.data_count prep);
+        keys_statement (Sqlite3.column_count prep) (Sqlite3.data_count prep);
     try
       let row, more_to_come  = get_row_exn prep in
       begin match string_option_data_exn row with
-      | Some one ->
-        (Some one)
+      | Some one_key ->
+        let statement = get_statement default_table (Some collection) one_key in
+        begin match exec_option_exn t.handle statement with
+        | Some one -> (Some one)
+        | None ->
+          (* somebody deleted that key-value in-betweeen the “next
+             row” and the “get value”, so we go to the next *)
+          if !debug then
+            dbg "%S must be gone" one_key;
+          next_exn prep
+        end
       | None ->
         let _ = Sqlite3.finalize prep in
         None
@@ -216,8 +231,11 @@ let iterator t ~collection =
     in_posix_thread ~on_exn (fun () ->
         match !state with
         | None ->
-          let prep = Sqlite3.prepare t.handle statement in
-          state := Some prep;
+          let prep = Sqlite3.prepare t.handle keys_statement in
+          begin match Sqlite3.prepare_tail prep with
+          | None  -> state := Some prep;
+          | Some p -> state := Some p;
+          end;
           next_exn prep
         | Some prep ->
           next_exn prep

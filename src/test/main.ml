@@ -63,6 +63,7 @@ end
 module type TEST_DATABASE = sig
   val test_name: string
   module DB: Trakeva.KEY_VALUE_STORE
+  val debug_mode : bool -> unit
 end
 
 let open_close_test (module Test_db : TEST_DATABASE) uri_string () =
@@ -139,27 +140,101 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
       | Some v -> go (v :: acc) in
     go []
   in
+  let list_equal l1 l2 =
+    let prep = List.sort ~cmp:Pervasives.compare in
+    match prep l1 = prep l2 with
+    | true -> true
+    | false ->
+      say "[%s] ≠ [%s]"
+        (String.concat  ~sep:", " l1)
+        (String.concat  ~sep:", " l2);
+      false
+  in
   let check_iterator_like_get_all ~collection =
     let stream = DB.iterator db ~collection in
     to_list stream
     >>= fun all ->
     DB.get_all db ~collection
     >>= fun all_too ->
-    let list_equal l1 l2 =
-      let prep = List.sort ~cmp:Pervasives.compare in
-      match prep l1 = prep l2 with
-      | true -> true
-      | false ->
-        say "[%s] ≠ [%s]"
-          (String.concat  ~sep:", " l1)
-          (String.concat  ~sep:", " l2);
-        false
-    in
     local_assert (sprintf "iter %s" collection) (list_equal all all_too);
     return ()
   in
   check_iterator_like_get_all "c" >>= fun () ->
   check_iterator_like_get_all "cc" >>= fun () ->
+  (*
+     We now test going through a collection with `iterator` while
+     modifying the values of the collection.
+  *)
+  let make_self_collection ~collection =
+    let keyvalues = List.init 10 ~f:(sprintf "kv%d") in
+    let actions = List.map keyvalues ~f:(fun kv -> set ~collection ~key:kv kv) in
+    test_actions `Done actions
+    >>= fun () ->
+    return keyvalues
+  in
+  let iterate_and_set ~collection =
+    let stream = DB.iterator db ~collection in
+    let rec go_through () =
+      stream () >>= function
+      | Some kv ->
+        (* say "%s got some %S in the stream" Test_db.test_name kv; *)
+        test_actions `Done [set ~collection ~key:kv ("SET" ^ kv)]
+        >>= fun () ->
+        go_through ()
+      | None -> return ()
+    in
+    go_through ()
+  in
+  let test_rw_interleave collection =
+    make_self_collection ~collection
+    >>= fun keyvalues ->
+    iterate_and_set ~collection
+    >>= fun () ->
+    check_iterator_like_get_all collection
+    >>= fun () ->
+    DB.get_all db ~collection
+    >>= fun allnew ->
+    let modified = List.map keyvalues (fun v -> "SET" ^ v) in
+    local_assert (sprintf "test_rw_interleave %s" collection)
+      (list_equal modified allnew);
+    return ()
+  in
+  (* Test_db.debug_mode true; *)
+  test_rw_interleave "ccc"
+  >>= fun () ->
+  (*
+     We now try to delete all values in a collection while iterating on it.
+  *)
+  let iterate_and_delete ~collection ~at ~all =
+    let stream = DB.iterator db ~collection in
+    let rec go_through remaining =
+      stream () >>= function
+      | Some kv when remaining = 0 ->
+        say "%s got some %S in the stream" Test_db.test_name kv;
+        test_actions `Done (List.map all ~f:(fun key -> unset ~collection key))
+        >>= fun () ->
+        go_through (-1)
+      | Some kv ->
+        say "%s got some %S in the stream : remaining: %d" Test_db.test_name kv remaining;
+        go_through (remaining - 1)
+      | None -> return ()
+    in
+    go_through at
+  in
+  let test_delete_iterleave collection =
+    make_self_collection ~collection
+    >>= fun keyvalues ->
+    iterate_and_delete
+      ~collection ~all:keyvalues ~at:(List.length keyvalues / 2)
+    >>= fun () ->
+    DB.get_all db ~collection
+    >>= fun allnew ->
+    local_assert ("test_delete_iterleave") (allnew = []);
+    return ()
+  in
+  test_delete_iterleave "aaa"
+  >>= fun () ->
+  (* Test_db.debug_mode false; *)
   DB.close db
 
 let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
@@ -347,10 +422,12 @@ let git_db_test () =
 module Test_git_commands = struct
   let test_name = "Test_git_commands"
   module DB = Trakeva_git_commands
+  let debug_mode v = Trakeva_git_commands.global_debug_level := (if v then 2 else 0)
 end
 module Test_sqlite = struct
   let test_name = "Test_sqlite" 
   module DB = Trakeva_sqlite
+  let debug_mode v = Trakeva_sqlite.debug := v
 end
 
 let has_arg arlg possible =
@@ -368,6 +445,7 @@ let () =
 
   Test.run_monad "basic with git"
     (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
+
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
