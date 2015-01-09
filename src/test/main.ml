@@ -110,6 +110,14 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
     unset "k";
     set ~key:"k1" ~collection:"c" "V";
   ] >>= fun () ->
+  test_actions `Done [
+    set ~key:"thekey" ~collection:"c1" "v1";
+    set ~key:"thekey" ~collection:"c2" "v2";
+  ]
+  >>= fun () ->
+  test_get ?collection:None "thekey" ((=) None) >>= fun () ->
+  test_get ~collection:"c1" "thekey" ((=) (Some "v1")) >>= fun () ->
+  test_get ~collection:"c2" "thekey" ((=) (Some "v2")) >>= fun () ->
   test_actions `Not_done [
     contains ~key:"k" "v";
     set ~key:"k1" ~collection:"c" "V";

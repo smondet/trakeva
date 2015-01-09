@@ -50,7 +50,7 @@ let default_table = "trakeva_default_table"
 let create_table t =
   sprintf "CREATE TABLE IF NOT EXISTS %s \
            (collection BLOB, key BLOB, value BLOB, \
-           PRIMARY KEY(key) ON CONFLICT REPLACE)" t
+           PRIMARY KEY(collection, key) ON CONFLICT REPLACE)" t
 
 let option_equals =
   function
