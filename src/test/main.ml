@@ -242,6 +242,31 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
   in
   test_delete_iterleave "aaa"
   >>= fun () ->
+  (* Read and write concurrently: *)
+  let bunch_of_ints = List.init 100 ~f:(fun i -> i) in
+  Deferred_list.for_concurrent bunch_of_ints ~f:(function
+    | n when n mod 2 = 0 ->
+      let v = sprintf "%d" n in
+      test_actions `Done [set ~key:v v]
+    | n ->
+      let v = sprintf "%d" n in
+      DB.get db ~key
+      >>= fun _ ->
+      return ()
+    )
+  >>= fun ((_ : unit list), errors) ->
+  begin match errors with
+  | [] -> return ()
+  | more ->
+    let msg =
+      sprintf "concurrent errors: %s"
+        (List.map more ~f:(function
+           | `Database (`Act _, m) -> m)
+         |> String.concat ~sep:"; ") in
+    local_assert msg false;
+    return ()
+  end
+  >>= fun () ->
   (* Test_db.debug_mode false; *)
   DB.close db
 

@@ -25,6 +25,7 @@ let dbg fmt = ksprintf (eprintf "Trakeva_sqlite: %s\n%!") fmt
     
 type t = {
   handle: Sqlite3.db;
+  action_mutex: Lwt_mutex.t;
 }
 
 let in_posix_thread ~on_exn f =
@@ -98,12 +99,14 @@ let with_executed_statement handle statement f =
     let _ = Sqlite3.finalize prep in
     raise e)
 
-let is_ok_or_done_exn (rc: Sqlite3.Rc.t) =
+let is_ok_or_done_exn handle (rc: Sqlite3.Rc.t) =
   let open Sqlite3.Rc in
   match rc with
   | OK  -> ()
   | DONE -> ()
-  | _ -> failwith (sprintf "not ok/done: %s" (Sqlite3.Rc.to_string rc))
+  | _ -> failwith (sprintf "not ok/done: %s (global error: %s)"
+                     (Sqlite3.Rc.to_string rc)
+                     (Sqlite3.errmsg handle))
 
 let get_row_exn prep =
   match Sqlite3.step prep with
@@ -113,7 +116,7 @@ let get_row_exn prep =
 
 let exec_unit_exn handle statement =
   with_executed_statement handle statement (fun prep ->
-      Sqlite3.step prep |> is_ok_or_done_exn)
+      Sqlite3.step prep |> is_ok_or_done_exn handle)
 
 let string_option_data_exn data =
   let open Sqlite3.Data in
@@ -151,6 +154,7 @@ let load path =
     try if Sys.getenv "TRAKEVA_SQLITE_DEBUG" = "true" then debug := true
     with _ -> ()
   end;
+  let action_mutex = Lwt_mutex.create () in
   in_posix_thread ~on_exn (fun () ->
       if !debug then
         dbg "openning: %S" path;
@@ -159,7 +163,7 @@ let load path =
          https://www.sqlite.org/sharedcache.html *)
       let handle = Sqlite3.db_open ~mutex:`FULL ~cache:`PRIVATE path in
       exec_unit_exn handle (create_table default_table);
-      {handle}
+      {handle; action_mutex}
     )
 
 let close {handle} =
@@ -263,14 +267,16 @@ let act t ~(action: Action.t) =
   in
   let error_loc = `Act action in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
-  in_posix_thread ~on_exn begin fun () ->
-    exec_unit_exn t.handle "BEGIN TRANSACTION";
-    begin match transact action with
-    | false ->
-      exec_unit_exn t.handle "ROLLBACK";
-      `Not_done
-    | true ->
-      exec_unit_exn t.handle "COMMIT";
-      `Done
-    end
-  end
+  Lwt_mutex.with_lock t.action_mutex (fun () -> 
+      in_posix_thread ~on_exn begin fun () ->
+        exec_unit_exn t.handle "BEGIN TRANSACTION";
+        begin match transact action with
+        | false ->
+          exec_unit_exn t.handle "ROLLBACK";
+          `Not_done
+        | true ->
+          exec_unit_exn t.handle "COMMIT";
+          `Done
+        end
+      end
+    )
