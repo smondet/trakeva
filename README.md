@@ -61,6 +61,6 @@ opam-repository and
 please use:
 
     brew install pkg-config sqlite
-    export PKG_CONFIG_PATH=/usr/local//Cellar/sqlite/3.8.0.2/lib/pkgconfig
+    export PKG_CONFIG_PATH=`find /usr/local/Cellar/sqlite -depth 1 | tail -n 1`/lib/pkgconfig
     opam install sqlite3
 
