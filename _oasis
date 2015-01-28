@@ -25,7 +25,7 @@ Library trakeva
   Modules:    Trakeva, Trakeva_git_commands
 
 Library trakeva_sqlite
-  Build$: flag(sqlite) || flag(all) || falg(test)
+  Build$: flag(sqlite) || flag(all) || flag(test)
   Install$: flag(sqlite) || flag(all)
   Path:       src/lib_sqlite
   BuildTools: ocamlbuild
