@@ -476,11 +476,13 @@ let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
   Test.run_monad "git-db" git_db_test;
 
+  let git_basic_path = "_tmp_test/trakeva-git-test" in
+  ksprintf Sys.command "rm -fr %s && mkdir -p _tmp_test" git_basic_path |> ignore;
   Test.run_monad "basic with git"
-    (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
+    (basic_test (module Test_git_commands) git_basic_path);
 
-  let sqlite_path = "/tmp/trakeva-sqlite-test" in
-  ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+  let sqlite_path = "_tmp_test/trakeva-sqlite-test" in
+  ksprintf Sys.command "rm -fr %s && mkdir -p _tmp_test" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
 
   if has_arg argl ["bench"; "benchmarks"] then (
