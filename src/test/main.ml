@@ -249,7 +249,6 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
       let v = sprintf "%d" n in
       test_actions `Done [set ~key:v v]
     | n ->
-      let v = sprintf "%d" n in
       DB.get db ~key
       >>= fun _ ->
       return ()
@@ -261,6 +260,7 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
     let msg =
       sprintf "concurrent errors: %s"
         (List.map more ~f:(function
+           | `Database (`Get _, m)
            | `Database (`Act _, m) -> m)
          |> String.concat ~sep:"; ") in
     local_assert msg false;
