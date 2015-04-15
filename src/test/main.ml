@@ -474,10 +474,12 @@ let find_arg argl ~name ~convert =
 
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
-  Test.run_monad "git-db" git_db_test;
+  let test_git_commands = not (List.mem "no-git" argl) in
+  if test_git_commands then Test.run_monad "git-db" git_db_test;
 
-  Test.run_monad "basic with git"
-    (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
+  if test_git_commands then
+    Test.run_monad "basic with git"
+      (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
 
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
@@ -487,13 +489,35 @@ let () =
     ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
     let collection = find_arg argl ~name:"collection" ~convert:Int.of_string in
     let big_string_kb = find_arg argl ~name:"kb" ~convert:Int.of_string in
+    let timeout =
+      find_arg argl ~name:"timeout" ~convert:Float.of_string
+      |> Option.value ~default:10.
+    in
+    let bench_with_timeout f =
+      System.with_timeout timeout f
+      >>< begin function
+      | `Ok (_, res) -> return res
+      | `Error (`Timeout t) -> return ["Timeout", t]
+      | `Error (`System (_, `Exn e)) -> raise e
+      | `Error (`Database _ as other) -> fail other
+      end
+    in
     Test.run_monad "bench01" (fun () ->
-        benchmark_01 ?collection ?big_string_kb
-          (module Test_git_commands) (Test.new_tmp_dir ()) ()
-        >>= fun (_, git_bench01) ->
-        benchmark_01 ?collection ?big_string_kb
-          (module Test_sqlite) sqlite_path ()
-        >>= fun (_, sqlite_bench01) ->
+        begin if test_git_commands
+          then
+            bench_with_timeout (fun () ->
+                benchmark_01 ?collection ?big_string_kb
+                  (module Test_git_commands) (Test.new_tmp_dir ()) ()
+              )
+          else
+            return []
+        end
+        >>= fun git_bench01 ->
+        bench_with_timeout (fun () ->
+            benchmark_01 ?collection ?big_string_kb
+              (module Test_sqlite) sqlite_path ()
+          )
+        >>= fun sqlite_bench01 ->
         say "Bench01";
         List.iter git_bench01 ~f:(fun (n, f) ->
             say "git\t%s\t%F s" n f
