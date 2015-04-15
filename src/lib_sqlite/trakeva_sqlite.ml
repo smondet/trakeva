@@ -47,44 +47,46 @@ let escape_blob s =
 
 let default_table = "trakeva_default_table"
 
+let table_of_collection = function
+| Some collection ->
+  "trakeva_collection_" ^
+  String.map collection ~f:(function
+    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' as c -> c
+    | other -> '_')
+| None -> default_table
+
 (* https://www.sqlite.org/lang_createtable.html *)
 let create_table t =
   sprintf "CREATE TABLE IF NOT EXISTS %s \
-           (collection BLOB, key BLOB, value BLOB, \
-           PRIMARY KEY(collection, key) ON CONFLICT REPLACE)" t
+           (key BLOB, value BLOB, \
+           PRIMARY KEY (key) ON CONFLICT REPLACE)" t
 
-let option_equals =
-  function
-  | None -> "IS NULL"
-  | Some s -> sprintf "= %s" (escape_blob s)
+let get_statement collection key =
+  sprintf "SELECT value FROM %s WHERE key = %s"
+    (table_of_collection collection)
+    (escape_blob key)
 
-let get_statement table collection key =
-  sprintf "SELECT value FROM %s WHERE key = %s AND collection %s" table
-     (escape_blob key)
-     (option_equals collection)
+let get_all_statement collection =
+  sprintf "SELECT key FROM %s ORDER BY key"
+    (table_of_collection collection)
 
-let get_all_statement table collection =
-  sprintf "SELECT key FROM %s WHERE collection %s ORDER BY key" table
-    (option_equals collection)
-
-let keys_statement table collection =
-  sprintf "SELECT DISTINCT key FROM %s WHERE collection %s"
-    table (option_equals collection)
+let keys_statement collection =
+  sprintf "SELECT DISTINCT key FROM %s"
+    (table_of_collection collection)
 
 (*
 https://www.sqlite.org/lang_insert.html
 *)
-let set_statement table collection key value =
-  sprintf "INSERT OR REPLACE INTO %S (collection, key, value) VALUES (%s, %s, %s)"
-    table
-    (match collection with None -> "NULL" | Some s -> escape_blob s)
+let set_statement collection key value =
+  sprintf "INSERT OR REPLACE INTO %s (key, value) VALUES (%s, %s)"
+    (table_of_collection collection)
     (escape_blob key) (escape_blob value)
 
 (* https://www.sqlite.org/lang_delete.html *)
-let unset_statement table collection key =
-  sprintf "DELETE FROM %s WHERE key = %s AND collection %s" table
+let unset_statement collection key =
+  sprintf "DELETE FROM %s WHERE key = %s"
+    (table_of_collection collection)
     (escape_blob key)
-    (option_equals collection)
 
 let with_executed_statement handle statement f =
   let prep = Sqlite3.prepare handle statement in
@@ -162,7 +164,7 @@ let load path =
          the private cache is up for debate: 
          https://www.sqlite.org/sharedcache.html *)
       let handle = Sqlite3.db_open ~mutex:`FULL ~cache:`PRIVATE path in
-      exec_unit_exn handle (create_table default_table);
+      (* exec_unit_exn handle (create_table default_table); *)
       {handle; action_mutex}
     )
 
@@ -182,26 +184,41 @@ let close {handle} =
     loop 5
   end
 
+let retry_while_creating_collection t ?collection f =
+  let rec once did =
+    try f () with e ->
+      if did then raise e else (
+        exec_unit_exn t.handle
+          (create_table (table_of_collection collection));
+        once true
+      )
+  in
+  once false
+
 open Trakeva
 
 let get ?collection t ~key =
-  let statement = get_statement default_table collection key in
+  let statement = get_statement collection key in
   let error_loc = `Get (Key_in_collection.create key ?collection) in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   in_posix_thread ~on_exn (fun () ->
-      exec_option_exn t.handle statement
+      retry_while_creating_collection t ?collection (fun () ->
+          exec_option_exn t.handle statement
+        )
     )
 
 let get_all t ~collection =
-  let statement = get_all_statement default_table (Some collection) in
+  let statement = get_all_statement (Some collection) in
   let error_loc = `Get_all collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   in_posix_thread ~on_exn (fun () ->
-      exec_list_exn t.handle statement
+      retry_while_creating_collection t ~collection (fun () ->
+          exec_list_exn t.handle statement
+        )
     )
 
 let iterator t ~collection =
-  let keys_statement = keys_statement default_table (Some collection) in
+  let keys_statement = keys_statement (Some collection) in
   let error_loc = `Iter collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   let state = ref None in
@@ -225,12 +242,14 @@ let iterator t ~collection =
     in_posix_thread ~on_exn (fun () ->
         match !state with
         | None ->
-          let prep = Sqlite3.prepare t.handle keys_statement in
-          begin match Sqlite3.prepare_tail prep with
-          | None  -> state := Some prep;
-          | Some p -> state := Some p;
-          end;
-          next_exn prep
+          retry_while_creating_collection t ~collection (fun () ->
+              let prep = Sqlite3.prepare t.handle keys_statement in
+              begin match Sqlite3.prepare_tail prep with
+              | None  -> state := Some prep;
+              | Some p -> state := Some p;
+              end;
+              next_exn prep
+            )
         | Some prep ->
           next_exn prep
       )
@@ -243,17 +262,20 @@ let act t ~(action: Action.t) =
     let open Action in
     match action with
     | Set ({ key; collection }, value) ->
-      let statement = set_statement default_table collection key value in
-      exec_unit_exn t.handle statement;
-      true
+      retry_while_creating_collection t ?collection (fun () ->
+          let statement = set_statement collection key value in
+          exec_unit_exn t.handle statement;
+          true)
     | Unset { key; collection } ->
-      let statement = unset_statement default_table collection key in
-      exec_unit_exn t.handle statement;
-      true
+      retry_while_creating_collection t ?collection (fun () ->
+          let statement = unset_statement collection key in
+          exec_unit_exn t.handle statement;
+          true)
     | Sequence l -> List.for_all l ~f:transact
     | Check ({ key; collection }, opt) ->
-      let statement = get_statement default_table collection key in
-      exec_option_exn t.handle statement = opt
+      retry_while_creating_collection t ?collection (fun () ->
+          let statement = get_statement collection key in
+          exec_option_exn t.handle statement = opt)
   in
   let error_loc = `Act action in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
