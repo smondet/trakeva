@@ -294,29 +294,40 @@ let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
   in
   bench_action ~action (sprintf "%d small strings" collection)
   >>= fun _ ->
-  bench_action (sprintf "%d %d KB strings" collection big_string_kb) ~action:(
-    List.init collection (fun i ->
-        let value = String.make (big_string_kb * 1_000) 'B' in
-        set ~key:(sprintf "k%d" i) ~collection:"cc" value))
-  >>= fun _ ->
-  bench_function "Get all collection 'cc'" (fun () -> DB.get_all db "cc")
-  >>= fun cc ->
-  let l = List.length cc in
-  Test.check ["bench01"; "length cc"; Int.to_string l] (l = collection);
-  bench_function "Get all 'cc' one by one" (fun () ->
+  let bench_in_collection name =
+    bench_action
+      (sprintf "Set %d %d KB strings into %s" collection big_string_kb name)
+    ~action:(
+      List.init collection (fun i ->
+          let value = String.make (big_string_kb * 1_000) 'B' in
+          set ~key:(sprintf "k%d" i) ~collection:name value))
+    >>= fun _ ->
+    bench_function (sprintf "Get all collection %s" name)
+      (fun () -> DB.get_all db name)
+    >>= fun cc ->
+    let l = List.length cc in
+    Test.check ["bench01"; "length"; name; Int.to_string l] (l = collection);
+    bench_function (sprintf "Get all %s one by one" name)
+      (fun () ->
       let rec loop n =
         if n = 0
         then return ()
         else (
           let key = sprintf "k%d" (n - 1) in
-          DB.get ~collection:"cc"  db ~key
+          DB.get ~collection:name  db ~key
           >>= fun v ->
           Test.check ["bench01"; key; "not none"; ] (v <> None);
           loop (n - 1)
         )
       in
       loop collection)
-  >>= fun _ ->
+    >>= fun _ ->
+    return ()
+  in
+  bench_in_collection "C1" >>= fun () ->
+  bench_in_collection "C2" >>= fun () ->
+  bench_in_collection "C3" >>= fun () ->
+  bench_in_collection "C4" >>= fun () ->
   DB.close db
   >>= fun () ->
   return (test_name, List.rev !benches)
