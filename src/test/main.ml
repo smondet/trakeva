@@ -403,7 +403,7 @@ let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
   bench_in_collection "C1" >>= fun () ->
   bench_in_collection "C2" >>= fun () ->
   bench_in_collection "C3" >>= fun () ->
-  bench_in_collection "C4" >>= fun () ->
+  bench_in_collection "C3" >>= fun () ->
   DB.close db
   >>= fun () ->
   return (test_name, List.rev !benches)
