@@ -96,7 +96,7 @@ module In_memory : TEST_DATABASE = struct
     let get_all t ~collection =
       let col = get_collection t (Some collection) in
       let l = ref [] in
-      Hashtbl.iter (fun _ v -> l := v :: !l) col;
+      Hashtbl.iter (fun k v -> l := k :: !l) col;
       return !l
 
     let iterator t ~collection =
@@ -208,7 +208,7 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
   DB.get_all db ~collection:"c"
   >>= fun list ->
   local_assert "full collection 'c'"
-    (List.sort ~cmp:String.compare list = ["V"; "V2"; "V3"; "V4"; "V5"]);
+    (List.sort ~cmp:String.compare list = ["k1"; "k2"; "k3"; "k4"; "k5"]);
   let key = "K" in
   test_actions `Done [
     set ~key "\"";
@@ -278,9 +278,9 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
     >>= fun () ->
     DB.get_all db ~collection
     >>= fun allnew ->
-    let modified = List.map keyvalues (fun v -> "SET" ^ v) in
+    (* let modified = List.map keyvalues (fun v -> "SET" ^ v) in *)
     local_assert (sprintf "test_rw_interleave %s" collection)
-      (list_equal modified allnew);
+      (list_equal keyvalues allnew);
     return ()
   in
   (* Test_db.debug_mode true; *)

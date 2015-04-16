@@ -64,7 +64,7 @@ let get_statement table collection key =
      (option_equals collection)
 
 let get_all_statement table collection =
-  sprintf "SELECT value FROM %s WHERE collection %s ORDER BY key" table
+  sprintf "SELECT key FROM %s WHERE collection %s ORDER BY key" table
     (option_equals collection)
 
 let keys_statement table collection =
@@ -212,17 +212,7 @@ let iterator t ~collection =
     try
       let row, more_to_come  = get_row_exn prep in
       begin match string_option_data_exn row with
-      | Some one_key ->
-        let statement = get_statement default_table (Some collection) one_key in
-        begin match exec_option_exn t.handle statement with
-        | Some one -> (Some one)
-        | None ->
-          (* somebody deleted that key-value in-betweeen the “next
-             row” and the “get value”, so we go to the next *)
-          if !debug then
-            dbg "%S must be gone" one_key;
-          next_exn prep
-        end
+      | Some one_key -> Some one_key
       | None ->
         let _ = Sqlite3.finalize prep in
         None
