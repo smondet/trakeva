@@ -66,10 +66,6 @@ let get_statement collection key =
     (table_of_collection collection)
     (escape_blob key)
 
-let get_all_statement collection =
-  sprintf "SELECT key FROM %s ORDER BY key"
-    (table_of_collection collection)
-
 let keys_statement collection =
   sprintf "SELECT DISTINCT key FROM %s"
     (table_of_collection collection)
@@ -208,7 +204,7 @@ let get ?collection t ~key =
     )
 
 let get_all t ~collection =
-  let statement = get_all_statement (Some collection) in
+  let statement = keys_statement (Some collection) in
   let error_loc = `Get_all collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   in_posix_thread ~on_exn (fun () ->
