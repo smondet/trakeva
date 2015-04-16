@@ -470,7 +470,9 @@ let () =
               (module In_memory) "" ()
           )
         >>= fun in_mem_bench01 ->
-        say "Bench01";
+        say "Bench01 sqlite: %F\tin-mem: %F"
+          (List.fold sqlite_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f))
+          (List.fold in_mem_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f)) ;
         List.iter sqlite_bench01 ~f:(fun (n, f) ->
             say "sqlite\t%s\t%F s" n f
           );
