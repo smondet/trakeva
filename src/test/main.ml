@@ -373,30 +373,41 @@ let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
   let bench_in_collection name =
     bench_action
       (sprintf "Set %d %d KB strings into %s" collection big_string_kb name)
-    ~action:(
-      List.init collection (fun i ->
-          let value = String.make (big_string_kb * 1_000) 'B' in
-          set ~key:(sprintf "k%d" i) ~collection:name value))
+      ~action:(
+        List.init collection (fun i ->
+            let value = String.make (big_string_kb * 1_000) 'B' in
+            set ~key:(sprintf "k%d" i) ~collection:name value))
     >>= fun _ ->
     bench_function (sprintf "Get all collection %s" name)
       (fun () -> DB.get_all db name)
     >>= fun cc ->
     let l = List.length cc in
     Test.check ["bench01"; "length"; name; Int.to_string l] (l = collection);
+    bench_function (sprintf "Iterate on all collection %s" name)
+      (fun () ->
+         let iter = DB.iterator db ~collection:name in
+         let rec loop () =
+           iter ()
+           >>= function
+           | Some obj -> loop ()
+           | None -> return ()
+         in
+         loop ())
+    >>= fun () ->
     bench_function (sprintf "Get all %s one by one" name)
       (fun () ->
-      let rec loop n =
-        if n = 0
-        then return ()
-        else (
-          let key = sprintf "k%d" (n - 1) in
-          DB.get ~collection:name  db ~key
-          >>= fun v ->
-          Test.check ["bench01"; key; "not none"; ] (v <> None);
-          loop (n - 1)
-        )
-      in
-      loop collection)
+         let rec loop n =
+           if n = 0
+           then return ()
+           else (
+             let key = sprintf "k%d" (n - 1) in
+             DB.get ~collection:name  db ~key
+             >>= fun v ->
+             Test.check ["bench01"; key; "not none"; ] (v <> None);
+             loop (n - 1)
+           )
+         in
+         loop collection)
     >>= fun _ ->
     return ()
   in
