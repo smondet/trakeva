@@ -65,6 +65,82 @@ module type TEST_DATABASE = sig
   module DB: Trakeva.KEY_VALUE_STORE
   val debug_mode : bool -> unit
 end
+module In_memory : TEST_DATABASE = struct
+
+  let test_name = "in-mem"
+  let debug_mode _ = ()
+  module DB = struct
+    type t = {
+      nocol: (string, string) Hashtbl.t;
+      cols: (string, (string, string) Hashtbl.t) Hashtbl.t;
+    }
+    let load _ = return {nocol = Hashtbl.create 42; cols = Hashtbl.create 42} 
+    let close _ = return ()
+
+    let get_collection t = function
+      | None -> t.nocol
+      | Some s ->
+        begin try Hashtbl.find t.cols s
+        with _ ->
+          let newone = Hashtbl.create 42 in
+          Hashtbl.add t.cols s newone;
+          newone
+        end
+
+    let get ?collection t ~key =
+      let col = get_collection t collection in
+      begin try Some (Hashtbl.find col key) |> return 
+      with _ -> return None
+      end
+
+    let get_all t ~collection =
+      let col = get_collection t (Some collection) in
+      let l = ref [] in
+      Hashtbl.iter (fun _ v -> l := v :: !l) col;
+      return !l
+
+    let iterator t ~collection =
+      let allref = ref None in
+      begin fun () ->
+        begin match !allref with
+        | None ->
+          get_all t collection
+          >>= fun all ->
+          let a = ref all in
+          allref := Some a;
+          return a
+        | Some l -> return l
+        end
+        >>= fun all ->
+        match !all with
+        | [] -> return None
+        | h :: t -> all := t; return (Some h)
+      end
+
+    let act t ~action =
+      let open Trakeva.Action in
+      let open Trakeva.Key_in_collection in
+      let rec go = function
+      | Set ({key; collection}, v) ->
+        let col = get_collection t collection in
+        Hashtbl.replace col key v;
+        true
+      | Unset {key; collection} ->
+        let col = get_collection t collection in
+        Hashtbl.remove col key;
+        true
+      | Check _ -> true
+      | Sequence l ->
+        List.fold l ~init:true ~f:(fun prev act -> prev && go act)
+      in
+      match go action with
+      | true -> return `Done
+      | false -> return `Not_done
+
+
+  end
+
+end
 
 let open_close_test (module Test_db : TEST_DATABASE) uri_string () =
   let open Test_db in
@@ -529,12 +605,20 @@ let () =
               (module Test_sqlite) sqlite_path ()
           )
         >>= fun sqlite_bench01 ->
+        bench_with_timeout (fun () ->
+            benchmark_01 ?collection ?big_string_kb
+              (module In_memory) "" ()
+          )
+        >>= fun in_mem_bench01 ->
         say "Bench01";
         List.iter git_bench01 ~f:(fun (n, f) ->
             say "git\t%s\t%F s" n f
           );
         List.iter sqlite_bench01 ~f:(fun (n, f) ->
             say "sqlite\t%s\t%F s" n f
+          );
+        List.iter in_mem_bench01 ~f:(fun (n, f) ->
+            say "in_mem\t%s\t%F s" n f
           );
         return ()
       );
