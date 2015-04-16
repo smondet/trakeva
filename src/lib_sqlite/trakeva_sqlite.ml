@@ -163,7 +163,7 @@ let load path =
       (* we need the mutex `FULL: https://www.sqlite.org/threadsafe.html
          the private cache is up for debate: 
          https://www.sqlite.org/sharedcache.html *)
-      let handle = Sqlite3.db_open ~mutex:`FULL ~cache:`PRIVATE path in
+      let handle = Sqlite3.db_open ~mutex:`FULL ~cache:`SHARED ~vfs:"unix-excl" path in
       (* exec_unit_exn handle (create_table default_table); *)
       {handle; action_mutex}
     )
