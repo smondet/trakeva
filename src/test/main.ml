@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
+(*  Copyright 2015, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
 (*  Licensed under the Apache License, Version 2.0 (the "License");       *)
 (*  you may not use this file except in compliance with the License.      *)
@@ -426,6 +426,14 @@ module Test_sqlite = struct
   let debug_mode v = Trakeva_sqlite.debug := v
 end
 
+module Test_sqlite_with_greedy_cache = struct
+  let test_name = "Test_sqlite_with_greedy_cache" 
+  module DB = Trakeva_cache.Add(Trakeva_sqlite)
+  let debug_mode v =
+    Trakeva_sqlite.debug := v;
+    Trakeva_cache.debug := v;
+end
+
 let has_arg arlg possible =
   List.exists arlg ~f:(List.mem ~set:possible)
 
@@ -442,6 +450,9 @@ let () =
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
 
+  ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+  Test.run_monad "basic/sqlite-with-cache" (basic_test (module Test_sqlite_with_greedy_cache) sqlite_path);
+
   if has_arg argl ["bench"; "benchmarks"] then (
     ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
     let collection = find_arg argl ~name:"collection" ~convert:Int.of_string in
@@ -450,8 +461,9 @@ let () =
       find_arg argl ~name:"timeout" ~convert:Float.of_string
       |> Option.value ~default:10.
     in
-    let bench_with_timeout f =
-      System.with_timeout timeout f
+    let bench_with_timeout file f =
+      ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+      System.with_timeout timeout (fun () -> f file)
       >>< begin function
       | `Ok (_, res) -> return res
       | `Error (`Timeout t) -> return ["Timeout", t]
@@ -460,21 +472,30 @@ let () =
       end
     in
     Test.run_monad "bench01" (fun () ->
-        bench_with_timeout (fun () ->
+        bench_with_timeout "/tmp/trakeva-bench-sqlite" (fun path ->
             benchmark_01 ?collection ?big_string_kb
-              (module Test_sqlite) sqlite_path ()
+              (module Test_sqlite) path ()
           )
         >>= fun sqlite_bench01 ->
-        bench_with_timeout (fun () ->
+        bench_with_timeout "/tmp/trakeva-bench-sqlite-with-cache" (fun path ->
+            benchmark_01 ?collection ?big_string_kb
+              (module Test_sqlite_with_greedy_cache) path ()
+          )
+        >>= fun sqlite_cached_bench01 ->
+        bench_with_timeout "" (fun _ ->
             benchmark_01 ?collection ?big_string_kb
               (module In_memory) "" ()
           )
         >>= fun in_mem_bench01 ->
-        say "Bench01 sqlite: %F\tin-mem: %F"
+        say "Bench01 sqlite: %F\tsqlite+cache: %F\tin-mem: %F"
           (List.fold sqlite_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f))
+          (List.fold sqlite_cached_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f))
           (List.fold in_mem_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f)) ;
         List.iter sqlite_bench01 ~f:(fun (n, f) ->
             say "sqlite\t%s\t%F s" n f
+          );
+        List.iter sqlite_cached_bench01 ~f:(fun (n, f) ->
+            say "sqliteGC\t%s\t%F s" n f
           );
         List.iter in_mem_bench01 ~f:(fun (n, f) ->
             say "in_mem\t%s\t%F s" n f
