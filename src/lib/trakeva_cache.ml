@@ -23,55 +23,6 @@ let debug = ref false
 
 let dbg fmt = ksprintf (eprintf "Trakeva_cache: %s\n%!") fmt
     
-module Cache = struct
-
-  type collection = {
-    hashtbl: (string, string option) Hashtbl.t;
-  }
-  module String_map = Map.Make(String)
-  type t = {
-    mutable map: collection String_map.t;
-  }
-  let create () = { map = String_map.empty; }
-  let add_or_replace t ?(collection="") ~key v =
-    try
-      let {hashtbl} = String_map.find collection t.map in
-      Hashtbl.replace hashtbl key v
-    with
-    | _ ->
-      let hashtbl = Hashtbl.create 42 in
-      Hashtbl.replace hashtbl key v;
-      t.map <- String_map.add collection {hashtbl} t.map;
-      ()
-
-  let get t ?(collection="") ~key = 
-    try
-      let {hashtbl} = String_map.find collection t.map in
-      `Set (Hashtbl.find hashtbl key)
-    with _ -> `Unset
-
-  let remove t ?(collection="") ~key =
-    try
-      let {hashtbl} = String_map.find collection t.map in
-      Hashtbl.remove hashtbl key
-    with _ -> ()
-
-  let get_collection t ~collection ~get_all =
-    try
-      let col = String_map.find collection t.map in
-      return col
-    with
-    | _ ->
-      get_all ()
-      >>= fun all ->
-      let col = {hashtbl = Hashtbl.create 42} in
-      List.iter all ~f:(fun v -> assert false); (* we don't have keys! *)
-      t.map <- String_map.add collection col t.map;
-      return col
-
-    
-end
-
 module Greedy_cache = struct
 
   type t = {
