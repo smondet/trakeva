@@ -14,9 +14,15 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
-(** Add a very greedy cache around an existing Key-value store. *)
+(** Add a very greedy cache around an existing Key-value store.
+
+    The current implementation loads into memory all the collections
+    that it touches.
+
+*)
 module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE
 
 
+(** Enable over verbose debug priting. *)
 val debug : bool ref
 
