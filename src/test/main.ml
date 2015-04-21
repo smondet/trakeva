@@ -65,6 +65,82 @@ module type TEST_DATABASE = sig
   module DB: Trakeva.KEY_VALUE_STORE
   val debug_mode : bool -> unit
 end
+module In_memory : TEST_DATABASE = struct
+
+  let test_name = "in-mem"
+  let debug_mode _ = ()
+  module DB = struct
+    type t = {
+      nocol: (string, string) Hashtbl.t;
+      cols: (string, (string, string) Hashtbl.t) Hashtbl.t;
+    }
+    let load _ = return {nocol = Hashtbl.create 42; cols = Hashtbl.create 42} 
+    let close _ = return ()
+
+    let get_collection t = function
+      | None -> t.nocol
+      | Some s ->
+        begin try Hashtbl.find t.cols s
+        with _ ->
+          let newone = Hashtbl.create 42 in
+          Hashtbl.add t.cols s newone;
+          newone
+        end
+
+    let get ?collection t ~key =
+      let col = get_collection t collection in
+      begin try Some (Hashtbl.find col key) |> return 
+      with _ -> return None
+      end
+
+    let get_all t ~collection =
+      let col = get_collection t (Some collection) in
+      let l = ref [] in
+      Hashtbl.iter (fun _ v -> l := v :: !l) col;
+      return !l
+
+    let iterator t ~collection =
+      let allref = ref None in
+      begin fun () ->
+        begin match !allref with
+        | None ->
+          get_all t collection
+          >>= fun all ->
+          let a = ref all in
+          allref := Some a;
+          return a
+        | Some l -> return l
+        end
+        >>= fun all ->
+        match !all with
+        | [] -> return None
+        | h :: t -> all := t; return (Some h)
+      end
+
+    let act t ~action =
+      let open Trakeva.Action in
+      let open Trakeva.Key_in_collection in
+      let rec go = function
+      | Set ({key; collection}, v) ->
+        let col = get_collection t collection in
+        Hashtbl.replace col key v;
+        true
+      | Unset {key; collection} ->
+        let col = get_collection t collection in
+        Hashtbl.remove col key;
+        true
+      | Check _ -> true
+      | Sequence l ->
+        List.fold l ~init:true ~f:(fun prev act -> prev && go act)
+      in
+      match go action with
+      | true -> return `Done
+      | false -> return `Not_done
+
+
+  end
+
+end
 
 let open_close_test (module Test_db : TEST_DATABASE) uri_string () =
   let open Test_db in
@@ -294,29 +370,51 @@ let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
   in
   bench_action ~action (sprintf "%d small strings" collection)
   >>= fun _ ->
-  bench_action (sprintf "%d %d KB strings" collection big_string_kb) ~action:(
-    List.init collection (fun i ->
-        let value = String.make (big_string_kb * 1_000) 'B' in
-        set ~key:(sprintf "k%d" i) ~collection:"cc" value))
-  >>= fun _ ->
-  bench_function "Get all collection 'cc'" (fun () -> DB.get_all db "cc")
-  >>= fun cc ->
-  let l = List.length cc in
-  Test.check ["bench01"; "length cc"; Int.to_string l] (l = collection);
-  bench_function "Get all 'cc' one by one" (fun () ->
-      let rec loop n =
-        if n = 0
-        then return ()
-        else (
-          let key = sprintf "k%d" (n - 1) in
-          DB.get ~collection:"cc"  db ~key
-          >>= fun v ->
-          Test.check ["bench01"; key; "not none"; ] (v <> None);
-          loop (n - 1)
-        )
-      in
-      loop collection)
-  >>= fun _ ->
+  let bench_in_collection name =
+    bench_action
+      (sprintf "Set %d %d KB strings into %s" collection big_string_kb name)
+      ~action:(
+        List.init collection (fun i ->
+            let value = String.make (big_string_kb * 1_000) 'B' in
+            set ~key:(sprintf "k%d" i) ~collection:name value))
+    >>= fun _ ->
+    bench_function (sprintf "Get all collection %s" name)
+      (fun () -> DB.get_all db name)
+    >>= fun cc ->
+    let l = List.length cc in
+    Test.check ["bench01"; "length"; name; Int.to_string l] (l = collection);
+    bench_function (sprintf "Iterate on all collection %s" name)
+      (fun () ->
+         let iter = DB.iterator db ~collection:name in
+         let rec loop () =
+           iter ()
+           >>= function
+           | Some obj -> loop ()
+           | None -> return ()
+         in
+         loop ())
+    >>= fun () ->
+    bench_function (sprintf "Get all %s one by one" name)
+      (fun () ->
+         let rec loop n =
+           if n = 0
+           then return ()
+           else (
+             let key = sprintf "k%d" (n - 1) in
+             DB.get ~collection:name  db ~key
+             >>= fun v ->
+             Test.check ["bench01"; key; "not none"; ] (v <> None);
+             loop (n - 1)
+           )
+         in
+         loop collection)
+    >>= fun _ ->
+    return ()
+  in
+  bench_in_collection "C1" >>= fun () ->
+  bench_in_collection "C2" >>= fun () ->
+  bench_in_collection "C3" >>= fun () ->
+  bench_in_collection "C3" >>= fun () ->
   DB.close db
   >>= fun () ->
   return (test_name, List.rev !benches)
@@ -474,10 +572,12 @@ let find_arg argl ~name ~convert =
 
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
-  Test.run_monad "git-db" git_db_test;
+  let test_git_commands = not (List.mem "no-git" argl) in
+  if test_git_commands then Test.run_monad "git-db" git_db_test;
 
-  Test.run_monad "basic with git"
-    (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
+  if test_git_commands then
+    Test.run_monad "basic with git"
+      (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
 
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
@@ -487,19 +587,49 @@ let () =
     ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
     let collection = find_arg argl ~name:"collection" ~convert:Int.of_string in
     let big_string_kb = find_arg argl ~name:"kb" ~convert:Int.of_string in
+    let timeout =
+      find_arg argl ~name:"timeout" ~convert:Float.of_string
+      |> Option.value ~default:10.
+    in
+    let bench_with_timeout f =
+      System.with_timeout timeout f
+      >>< begin function
+      | `Ok (_, res) -> return res
+      | `Error (`Timeout t) -> return ["Timeout", t]
+      | `Error (`System (_, `Exn e)) -> raise e
+      | `Error (`Database _ as other) -> fail other
+      end
+    in
     Test.run_monad "bench01" (fun () ->
-        benchmark_01 ?collection ?big_string_kb
-          (module Test_git_commands) (Test.new_tmp_dir ()) ()
-        >>= fun (_, git_bench01) ->
-        benchmark_01 ?collection ?big_string_kb
-          (module Test_sqlite) sqlite_path ()
-        >>= fun (_, sqlite_bench01) ->
+        begin if test_git_commands
+          then
+            bench_with_timeout (fun () ->
+                benchmark_01 ?collection ?big_string_kb
+                  (module Test_git_commands) (Test.new_tmp_dir ()) ()
+              )
+          else
+            return []
+        end
+        >>= fun git_bench01 ->
+        bench_with_timeout (fun () ->
+            benchmark_01 ?collection ?big_string_kb
+              (module Test_sqlite) sqlite_path ()
+          )
+        >>= fun sqlite_bench01 ->
+        bench_with_timeout (fun () ->
+            benchmark_01 ?collection ?big_string_kb
+              (module In_memory) "" ()
+          )
+        >>= fun in_mem_bench01 ->
         say "Bench01";
         List.iter git_bench01 ~f:(fun (n, f) ->
             say "git\t%s\t%F s" n f
           );
         List.iter sqlite_bench01 ~f:(fun (n, f) ->
             say "sqlite\t%s\t%F s" n f
+          );
+        List.iter in_mem_bench01 ~f:(fun (n, f) ->
+            say "in_mem\t%s\t%F s" n f
           );
         return ()
       );
