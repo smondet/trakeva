@@ -71,7 +71,7 @@ module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
     >>= fun original ->
     return {original; cache = Greedy_cache.create (); mutex = Lwt_mutex.create ()}
 
-  let close {original; cache} =
+  let close {original; _} =
     KV_DB.close original
 
   open Trakeva.Action
