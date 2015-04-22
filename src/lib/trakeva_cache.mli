@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
+(*  Copyright 2015, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
 (*  Licensed under the Apache License, Version 2.0 (the "License");       *)
 (*  you may not use this file except in compliance with the License.      *)
@@ -14,24 +14,15 @@
 (*  permissions and limitations under the License.                        *)
 (**************************************************************************)
 
+(** Add a very greedy cache around an existing Key-value store.
 
-(** {3 Implementation of the API} *)
+    The current implementation loads into memory all the collections
+    that it touches.
 
-include Trakeva.KEY_VALUE_STORE
+*)
+module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE
 
-val global_debug_level: int ref
-(** Debug-logging level used in the module (default: 4). *)
 
-(** {3 Testing Help} *)
+(** Enable over verbose debug priting. *)
+val debug : bool ref
 
-(** This module should be used only by the tests; with {!Debug.global_debug}
-    one can inject a {i harder} failure (exception thrown)
-    at a precise given point (see {!Debug.t}). *)
-module Debug: sig
-
-  type t =  No | After_write of string
-         | After_git_add of string 
-         | After_git_rm of string 
-
-  val global_debug: t ref
-end

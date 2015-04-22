@@ -1,5 +1,5 @@
 (**************************************************************************)
-(*  Copyright 2014, Sebastien Mondet <seb@mondet.org>                     *)
+(*  Copyright 2015, Sebastien Mondet <seb@mondet.org>                     *)
 (*                                                                        *)
 (*  Licensed under the Apache License, Version 2.0 (the "License");       *)
 (*  you may not use this file except in compliance with the License.      *)
@@ -96,7 +96,7 @@ module In_memory : TEST_DATABASE = struct
     let get_all t ~collection =
       let col = get_collection t (Some collection) in
       let l = ref [] in
-      Hashtbl.iter (fun _ v -> l := v :: !l) col;
+      Hashtbl.iter (fun k v -> l := k :: !l) col;
       return !l
 
     let iterator t ~collection =
@@ -208,7 +208,7 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
   DB.get_all db ~collection:"c"
   >>= fun list ->
   local_assert "full collection 'c'"
-    (List.sort ~cmp:String.compare list = ["V"; "V2"; "V3"; "V4"; "V5"]);
+    (List.sort ~cmp:String.compare list = ["k1"; "k2"; "k3"; "k4"; "k5"]);
   let key = "K" in
   test_actions `Done [
     set ~key "\"";
@@ -278,9 +278,9 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
     >>= fun () ->
     DB.get_all db ~collection
     >>= fun allnew ->
-    let modified = List.map keyvalues (fun v -> "SET" ^ v) in
+    (* let modified = List.map keyvalues (fun v -> "SET" ^ v) in *)
     local_assert (sprintf "test_rw_interleave %s" collection)
-      (list_equal modified allnew);
+      (list_equal keyvalues allnew);
     return ()
   in
   (* Test_db.debug_mode true; *)
@@ -420,145 +420,18 @@ let benchmark_01 (module Test_db : TEST_DATABASE) uri_string
   return (test_name, List.rev !benches)
 
   
-let git_db_test () =
-  let module DB = Trakeva_git_commands in
-  let open Trakeva.Action in
-  let db_file  = Test.new_tmp_dir () in
-  DB.load db_file
-  >>= fun db ->
-  DB.get db ~key:"k"
-  >>= fun res ->
-  begin match res with
-  | None -> return ()
-  | Some v -> Test.fail (sprintf "key k got %S" v); return ()
-  end
-  >>= fun () ->
-  begin DB.act db DB.(seq [ is_not_set "k"; set ~key:"k" "V" ])
-    >>= function
-    | `Done -> return ()
-    | `Not_done -> Test.fail "seq 1 not done"; return ()
-  end
-  >>= fun () ->
-  let check_k current_db =
-    begin DB.get current_db ~key:"k" >>= function
-      | Some v when v = "V" -> return ()
-      | None -> Test.fail (sprintf "get k got None"); return ()
-      | Some v -> Test.fail (sprintf "get k got %S" v); return ()
-    end
-  in
-  check_k db >>= fun () ->
-  DB.close db >>= fun () ->
-  DB.load db_file
-  >>= fun db2 ->
-  check_k db2 >>= fun () ->
-  begin DB.act db2 DB.(seq [contains ~key:"k" "V"])
-    >>= function
-    | `Done -> return ()
-    | `Not_done -> Test.fail "seq 2 not done"; return ()
-  end
-  >>= fun () ->
-  (* Transation that fails: *)
-  begin DB.act db2 DB.(seq [
-      set ~key:"k2" "vvv";
-      set ~collection:"c3" ~key:"k3" "vvv";
-      set ~key:"k2" "uuu";
-      contains ~key:"k" "u"])
-    >>= function
-    | `Not_done -> return ()
-    | `Done -> Test.fail "seq 3 done"; return ()
-  end
-  >>= fun () ->
-  (* Transation that succeeds: *)
-  begin DB.act db2 DB.(seq [
-      is_not_set "k2";
-      set ~key:"k2" "vvv";
-      contains ~key:"k2" "vvv";
-      set ~key:"k2" "uuu";
-      contains ~key:"k" "V";
-      contains ~key:"k2" "uuu";
-      unset "k2";
-      is_not_set "k2";
-    ])
-    >>= function
-    | `Done -> return ()
-    | `Not_done -> Test.fail "seq 4 not done"; return ()
-  end
-  >>= fun () ->
-  (* Transations that fail hard: *)
-  let test_with_debug_artificial_failure name f =
-    DB.Debug.(global_debug := f "k2");
-    begin
-      Lwt.catch (fun () ->
-          DB.act db2 DB.(seq [
-              set ~key:"k2" "rrr";
-              set ~key:"k2" "uuu";
-              unset "k2";
-            ])
-          >>< function
-          | _ -> Test.fail (sprintf "seq %s not exn" name); return ())
-        (fun e -> return ())
-    end
-    >>= fun () ->
-    DB.Debug.(global_debug := No);
-    (* We should be like end of seq 6 *)
-    begin DB.act db2 DB.(seq [
-        is_not_set "k2";
-        set ~collection:"c3" ~key:"k3" "uuu";
-        unset ~collection:"c3" "k3";
-        unset ~collection:"c3" "k3";
-      ])
-      >>= function
-      | `Done -> return ()
-      | `Not_done -> Test.fail (sprintf "seq %s+1 not done" name); return ()
-    end
-  in
-  test_with_debug_artificial_failure "After_write"
-    (fun k -> DB.Debug.After_write k)
-  >>= fun () ->
-  test_with_debug_artificial_failure "After_git_add"
-    (fun k -> DB.Debug.After_git_add k)
-  >>= fun () ->
-  test_with_debug_artificial_failure "After_git_rm"
-    (fun k -> DB.Debug.After_git_rm k)
-  >>= fun () ->
-  let check_collection collection result =
-    let check r =
-      let sort = List.sort ~cmp:String.compare in
-      sort r = sort result in
-    DB.get_all db2 ~collection
-    >>= function
-    | r when check r -> return ()
-    | other ->
-      Test.fail (sprintf "Collection test: in %S  \nexpecting [%s]  \ngot [%s]"
-                   collection (String.concat ~sep:", " result)
-                   (String.concat ~sep:", " other));
-      return ()
-  in
-  check_collection "" [] >>= fun () ->
-  check_collection "aslkdj" [] >>= fun () ->
-  check_collection "c3" [] >>= fun () ->
-  let collection = "c3" in
-  DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
-                      set ~collection ~key:"k2" "v2"])
-  >>= fun _ ->
-  check_collection collection ["v1"; "v2"] >>= fun () ->
-  let collection = "c4" in
-  DB.act db2 DB.(seq [set ~collection ~key:"k1" "v1";
-                      set ~collection ~key:"k2" "v2"])
-  >>= fun _ ->
-  check_collection collection ["v1"; "v2"] >>= fun () ->
-  (* check_collection "c3" ["sld"] >>= fun () -> *)
-  return ()
-
-module Test_git_commands = struct
-  let test_name = "Test_git_commands"
-  module DB = Trakeva_git_commands
-  let debug_mode v = Trakeva_git_commands.global_debug_level := (if v then 2 else 0)
-end
 module Test_sqlite = struct
   let test_name = "Test_sqlite" 
   module DB = Trakeva_sqlite
   let debug_mode v = Trakeva_sqlite.debug := v
+end
+
+module Test_sqlite_with_greedy_cache = struct
+  let test_name = "Test_sqlite_with_greedy_cache" 
+  module DB = Trakeva_cache.Add(Trakeva_sqlite)
+  let debug_mode v =
+    Trakeva_sqlite.debug := v;
+    Trakeva_cache.debug := v;
 end
 
 let has_arg arlg possible =
@@ -572,16 +445,13 @@ let find_arg argl ~name ~convert =
 
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
-  let test_git_commands = not (List.mem "no-git" argl) in
-  if test_git_commands then Test.run_monad "git-db" git_db_test;
-
-  if test_git_commands then
-    Test.run_monad "basic with git"
-      (basic_test (module Test_git_commands) (Test.new_tmp_dir ()));
 
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
+
+  ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+  Test.run_monad "basic/sqlite-with-cache" (basic_test (module Test_sqlite_with_greedy_cache) sqlite_path);
 
   if has_arg argl ["bench"; "benchmarks"] then (
     ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
@@ -591,8 +461,9 @@ let () =
       find_arg argl ~name:"timeout" ~convert:Float.of_string
       |> Option.value ~default:10.
     in
-    let bench_with_timeout f =
-      System.with_timeout timeout f
+    let bench_with_timeout file f =
+      ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
+      System.with_timeout timeout (fun () -> f file)
       >>< begin function
       | `Ok (_, res) -> return res
       | `Error (`Timeout t) -> return ["Timeout", t]
@@ -601,32 +472,30 @@ let () =
       end
     in
     Test.run_monad "bench01" (fun () ->
-        begin if test_git_commands
-          then
-            bench_with_timeout (fun () ->
-                benchmark_01 ?collection ?big_string_kb
-                  (module Test_git_commands) (Test.new_tmp_dir ()) ()
-              )
-          else
-            return []
-        end
-        >>= fun git_bench01 ->
-        bench_with_timeout (fun () ->
+        bench_with_timeout "/tmp/trakeva-bench-sqlite" (fun path ->
             benchmark_01 ?collection ?big_string_kb
-              (module Test_sqlite) sqlite_path ()
+              (module Test_sqlite) path ()
           )
         >>= fun sqlite_bench01 ->
-        bench_with_timeout (fun () ->
+        bench_with_timeout "/tmp/trakeva-bench-sqlite-with-cache" (fun path ->
+            benchmark_01 ?collection ?big_string_kb
+              (module Test_sqlite_with_greedy_cache) path ()
+          )
+        >>= fun sqlite_cached_bench01 ->
+        bench_with_timeout "" (fun _ ->
             benchmark_01 ?collection ?big_string_kb
               (module In_memory) "" ()
           )
         >>= fun in_mem_bench01 ->
-        say "Bench01";
-        List.iter git_bench01 ~f:(fun (n, f) ->
-            say "git\t%s\t%F s" n f
-          );
+        say "Bench01 sqlite: %F\tsqlite+cache: %F\tin-mem: %F"
+          (List.fold sqlite_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f))
+          (List.fold sqlite_cached_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f))
+          (List.fold in_mem_bench01 ~init:0. ~f:(fun p (_, f) -> p +. f)) ;
         List.iter sqlite_bench01 ~f:(fun (n, f) ->
             say "sqlite\t%s\t%F s" n f
+          );
+        List.iter sqlite_cached_bench01 ~f:(fun (n, f) ->
+            say "sqliteGC\t%s\t%F s" n f
           );
         List.iter in_mem_bench01 ~f:(fun (n, f) ->
             say "in_mem\t%s\t%F s" n f
