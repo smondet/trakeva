@@ -5,34 +5,47 @@ Transactions, Keys, and Values: an attempt at a generic interface for
 transactional key-value stores with different backends.
 
 
-The interfaces are defined in the `Trakeva` module, we have, for now, two
-implementations of the module type `Trakeva.KEY_VALUE_STORE`:
+The interfaces are defined in the `Trakeva` module, we have, for now, one
+DB implementation of the module type `Trakeva.KEY_VALUE_STORE`:
 
-- `Trakeva_git_commands` was extracted from
-[Ketrew](http://seb.mondet.org/software/ketrew/index.html), it uses the `git`
-executable to provide the functionality.
-- `Trakeva_sqlite` (in the separate library `trakeva_sqlite`) uses 
-[Sqlite3-ocaml](http://mmottl.github.io/sqlite3-ocaml/).
+- `Trakeva_sqlite` (in the separate library `trakeva_sqlite`) uses
+  [Sqlite3-ocaml](http://mmottl.github.io/sqlite3-ocaml/).
+
+There is also a very basic in “in-memory” cache functor, adding a cache layer on
+top of any key-value DB, cf. `Trakeva_cache`.
+
+This is Trakeva `0.0.0`, see also the repository
+[`smondet/trakeva`](https://github.com/smondet/trakeva) for issues/questions.
 
 Build
 -----
 
 To install the libraries use opam:
 
-    opam remote add smondet git@github.com:smondet/dev-opam-repo
-    opam update
     opam install trakeva
-    
-Only if the library `sqlite3` is installed the library `trakeva_sqlite` will be
-picked-up for installing too.
 
-As a developer, just run:
+If the library `sqlite3` is installed the library `trakeva_sqlite` will be
+picked-up for installation too (higly recommended).
+
+
+To get the development version you can use
+
+    opam remote add smondet https://github.com/smondet/dev-opam-repo.git
+    opam update
+
+or from the repository, just run:
 
     make configure
     make
 
-(this will enable all backends and the tests).  The tests/benchmarks also depend
-on [Sosa](http://seb.mondet.org/software/sosa/index.html) (`opam install sosa`).
+(this will enable all backends and the tests).
+
+Tests
+-----
+
+The tests/benchmarks also depend on the
+[Sosa](http://seb.mondet.org/software/sosa/index.html) library
+(`opam install sosa`).
 
 To run the unit tests:
 
