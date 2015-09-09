@@ -14,6 +14,10 @@ Flag sqlite
   Description: Build the Sqlite backend
   Default$: flag(all)
 
+Flag postgresql
+  Description: Build the Postgresql backend
+  Default$: flag(all)
+
 Flag test
   Description: Build the Tests (requires Sosa)
   Default$: flag(all)
@@ -32,14 +36,22 @@ Library trakeva_sqlite
   BuildDepends: trakeva, sqlite3, lwt.preemptive
   Modules:    Trakeva_sqlite
 
+Library trakeva_postgresql
+  Build$: flag(postgresql) || flag(all) || flag(test)
+  Install$: flag(postgresql) || flag(all)
+  Path:       src/lib_postgresql
+  BuildTools: ocamlbuild
+  BuildDepends: trakeva, postgresql, lwt.preemptive
+  Modules:    Trakeva_postgresql
+
 
 Executable trakeva_tests
   Path: src/test/
   BuildTools: ocamlbuild
   CompiledObject: best
-  BuildDepends: trakeva, trakeva_sqlite, sosa
-  Build$: flag(sqlite) || flag(all) || flag(test)
-  Install$: flag(sqlite) || flag(all)
+  BuildDepends: trakeva, trakeva_sqlite, trakeva_postgresql, sosa
+  Build$: flag(postgresql) || flag(sqlite) || flag(all) || flag(test)
+  Install$: flag(postgresql) || flag(sqlite) || flag(all)
   Install: false
   MainIs:     main.ml
 
