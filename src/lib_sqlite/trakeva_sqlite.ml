@@ -34,6 +34,7 @@ let in_posix_thread ~on_exn f =
     try `Ok (f ())
     with e -> on_exn e) ()
 
+(*
 let escape_blob s = 
   let b = Buffer.create (String.length s + 4) in
   Buffer.add_char b '\'';
@@ -43,7 +44,16 @@ let escape_blob s =
     );
   Buffer.add_char b '\'';
   Buffer.contents b
-
+*)    
+let escape_blob s = 
+  let b = Buffer.create (String.length s * 2 + 4) in
+  Buffer.add_string b "X'";
+  String.iter s ~f:(fun c ->
+      Buffer.add_string b (sprintf "%02X" (int_of_char c));
+    );
+  Buffer.add_char b '\'';
+  Buffer.contents b
+    
 
 let default_table = "trakeva_default_table"
 
