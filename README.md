@@ -10,11 +10,13 @@ DB implementation of the module type `Trakeva.KEY_VALUE_STORE`:
 
 - `Trakeva_sqlite` (in the separate library `trakeva_sqlite`) uses
   [Sqlite3-ocaml](http://mmottl.github.io/sqlite3-ocaml/).
+- `Trakeva_postgresql` (in the separate library `trakeva_postgresql`) uses
+  [`postgresql-ocaml`](http://mmottl.github.io/postgresql-ocaml/)
 
 There is also a very basic in “in-memory” cache functor, adding a cache layer on
 top of any key-value DB, cf. `Trakeva_cache`.
 
-This is Trakeva `0.0.0`, see also the repository
+This is Trakeva `0.0.0+master`, see also the repository
 [`smondet/trakeva`](https://github.com/smondet/trakeva) for issues/questions.
 
 Build
@@ -24,8 +26,9 @@ To install the libraries use opam:
 
     opam install trakeva
 
-If the library `sqlite3` is installed the library `trakeva_sqlite` will be
-picked-up for installation too (higly recommended).
+If the packages `sqlite3` and/or `postgresql` are installed, then the libraries
+`trakeva_sqlite` and/or `trakeva_postgresql` will be picked-up for installation
+too.
 
 
 To get the development version you can use
