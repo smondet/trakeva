@@ -439,6 +439,185 @@ module Test_sqlite_with_greedy_cache = struct
     Trakeva_cache.debug := v;
 end
 
+module Test_postgresql = struct
+  let test_name = "Test_postgresql" 
+  module DB = Trakeva_postgresql
+  let debug_mode v = Trakeva_postgresql.debug := v
+end
+
+let pg_server () =
+  let cmdf fmt =
+    ksprintf (fun s ->
+        let ret = Sys.command s in
+        if ret = 0 then () else failwith (sprintf "command %S returned %d" s ret)
+      ) fmt in
+  let dir =  "/tmp/trakeva_test/" in
+  let port = 4242 in
+  cmdf "rm -fr %s" dir;
+  cmdf "mkdir -p %s" dir;
+  cmdf "initdb -D %s" dir;
+  cmdf "PGPORT=%d pg_ctl start -l %s/log -D %s" port dir dir;
+  let stop () = cmdf "PGPORT=%d pg_ctl -D %s -m fast stop" port dir in
+  at_exit stop;
+  object
+    method stop = stop ()
+    method status = cmdf "PGPORT=%d pg_ctl -D %s status" port dir
+    method port = port
+    method conninfo = sprintf "postgresql:///template1?port=%d" port
+  end
+
+let independent_pg_test () =
+  let module PG = Postgresql in
+  let pg = pg_server () in
+  let conninfo = pg#conninfo in
+  Unix.sleep 1;
+  begin try
+    let handle = new PG.connection ~conninfo () in
+    let create_table t =
+      sprintf "CREATE TABLE IF NOT EXISTS %s \
+               (collection BYTEA, key BYTEA, value BYTEA, \
+               UNIQUE (collection, key))" t in
+    let res = handle#exec (create_table "test") in
+    let show_res name res =
+      say "%s\n  status: %s | error: %s | tuples: %d × %d"
+        name (PG.result_status res#status) res#error res#ntuples res#nfields;
+      for i = 0 to res#ntuples - 1 do
+        say "     (%s)"
+          (List.init res#nfields (fun j ->
+               if res#getisnull i j then "Null"
+               else sprintf "%S" (PG.unescape_bytea (res#getvalue i j)))
+           |> String.concat ~sep:", ");
+      done;
+    in
+    show_res "create-table" res;
+    let res = handle#exec (create_table "test") in
+    show_res "create-table again" res;
+    let execl l =
+      List.iter l ~f:(function
+        | (sql, args) ->
+          let res =
+            let as_array = Array.of_list args in
+            let params =
+              Array.map as_array ~f:(function | `Null -> PG.null | `V s -> s) in
+            let binary_params =
+              Array.map as_array ~f:(function `Null -> false | `V _ -> true) in
+            handle#exec sql ~params ~binary_params
+          in
+          let name = String.split sql ~on:(`Character '\n') |> List.hd_exn in
+          show_res name res
+        )
+    in
+    let add c k v =
+      execl [
+        "BEGIN", [];
+        "LOCK TABLE test IN ACCESS EXCLUSIVE MODE", [];
+        "UPDATE test SET value = $3 WHERE collection = $1 AND key = $2", [c; `V k; `V v];
+        {sql|
+           INSERT INTO test (collection, key, value)
+                  SELECT $1, $2, $3
+                  WHERE NOT EXISTS (SELECT 1 FROM test WHERE collection = $1 AND key = $2);
+      |sql}, [c; `V k; `V v];
+        "END", [];
+      ] in
+    add (`V "C") "K1" "V1";
+    add (`V "C") "K2" "V2";
+    add (`V "C") "K3" "V3\000\001";
+    add (`V "C") "K2" "V4";
+    execl ["SELECT key, value FROM test WHERE collection = $1", [`V "C"];];
+    execl [
+      "DELETE FROM test WHERE key = $2 AND collection = $1", [`V "C"; `V "K1"];
+    ];
+    execl ["SELECT collection, key, value FROM test WHERE collection = $1", [`V "C"];];
+    add (`Null) "K1" "VVVVVV";
+    add (`V "null") "K2" "VVVvvvvvvvVVV";
+    execl ["SELECT collection, key, value FROM test WHERE collection = $1", [`Null];];
+    execl ["SELECT collection, key, value FROM test WHERE collection is null", [];];
+    execl ["SELECT collection, key, value FROM test WHERE collection = $1 or ($1 is null AND collection is null)", [`Null];];
+    execl ["SELECT collection, key, value FROM test WHERE collection = $1 or ($1 is null AND collection is null)", [`V "C"];];
+    begin
+      Test.run_monad "pgtest" (fun () ->
+          Trakeva_postgresql.load conninfo
+          >>= fun trak ->
+          Trakeva_postgresql.get trak ~key:"K"
+          >>= begin function
+          | None -> say "get OK"; return ()
+          | Some s -> say "what??? %S" s; return ()
+          end
+          >>= fun () ->
+          let open Trakeva.Action in
+          Trakeva_postgresql.act trak  (seq [
+              set ~key:"K" "VVV";
+              set ~collection:"C" ~key:"K" "VVV";
+              set ~key:"K1" "VVV";
+              unset "K1";
+              is_not_set "K1";
+            ])
+          >>= fun _ ->
+          Trakeva_postgresql.get trak ~key:"K"
+          >>= begin function
+          | None -> say "2nd get NOT OK"; return ()
+          | Some s -> say "OK: %S" s; return ()
+          end
+          >>= fun () ->
+          let tab = Trakeva_postgresql.table_name trak in
+          execl [sprintf "SELECT collection, key, value FROM %s WHERE collection = $1 or ($1 is null AND collection is null)" tab, [`Null];];
+          Trakeva_postgresql.debug := true;
+          Trakeva_postgresql.act trak  (seq [
+              set ~collection:"C" ~key:"K"  "\000";
+              set ~collection:"C" ~key:"K1" "\000";
+              set ~collection:"C" ~key:"K2" "\000";
+              set ~collection:"C" ~key:"K3" "\000";
+            ])
+          >>= fun _ ->
+          Trakeva_postgresql.get_all trak ~collection:"C"
+          >>= fun list_of_keys ->
+          say "list_of_keys: %s" (String.concat ~sep:", " list_of_keys);
+          execl [sprintf "SELECT collection, key, value FROM %s WHERE collection = $1 or ($1 is null AND collection is null)" tab, [`V "C"];];
+          let it = Trakeva_postgresql.iterator trak ~collection:"C" in
+          let rec loop () =
+            it ()
+            >>= function
+            | Some key ->
+              Trakeva_postgresql.get trak ~collection:"C" ~key
+              >>= fun v ->
+              say "%s -> %s" key (Option.value v ~default:"????");
+              loop ()
+            | None ->
+              say "Iterator done";
+              return ()
+          in
+          loop ()
+          >>= fun () ->
+          (*
+          execl ["BEGIN", []];
+          execl [sprintf "DECLARE cur1 CURSOR FOR (SELECT collection, key, value FROM %s WHERE collection = $1 or ($1 is null AND collection is null))" tab, [`V "C"];];
+          (* execl ["OPEN cur1", []]; *)
+          execl ["FETCH NEXT FROM cur1", []];
+          execl ["FETCH NEXT FROM cur1", []];
+          execl ["FETCH NEXT FROM cur1", []];
+          execl ["FETCH NEXT FROM cur1", []];
+          execl ["FETCH NEXT FROM cur1", []];
+          execl ["FETCH NEXT FROM cur1", []];
+          execl ["CLOSE cur1", []];
+          execl ["END", []];
+             *)
+          return ()
+        )
+    end;
+    handle#finish;
+  with
+  | PG.Error e -> say "Error: %s" (PG.string_of_error e)
+  | e -> say "Exn: %s" (Printexc.to_string e)
+  end;
+  say "STOPPING";
+  pg#stop;
+  say "EXITING";
+  exit 0
+(*
+let () = pg#stop 
+let () = pg#status
+*)
+
 let has_arg arlg possible =
   List.exists arlg ~f:(List.mem ~set:possible)
 
@@ -451,12 +630,21 @@ let find_arg argl ~name ~convert =
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
 
+  (* independent_pg_test (); *)
+  
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
 
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite-with-cache" (basic_test (module Test_sqlite_with_greedy_cache) sqlite_path);
+
+  begin
+    let pg = pg_server () in
+    Unix.sleep 1;
+    Test.run_monad "basic/postgres" (basic_test (module Test_postgresql) pg#conninfo);
+    pg#stop;
+  end;
 
   if has_arg argl ["bench"; "benchmarks"] then (
     ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
