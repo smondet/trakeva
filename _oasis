@@ -5,6 +5,7 @@ Synopsis:    Transactions, Keys, and Values: Common interface to various databas
 Authors:     Sebastien Mondet <seb@mondet.org>
 License:     Apache-2.0
 Plugins:     META (0.4)
+PreBuildCommand: ./tools/codegen.sh $sqlite $postgresql
 
 Flag all
   Description: build and install everything
@@ -44,6 +45,12 @@ Library trakeva_postgresql
   BuildDepends: trakeva, postgresql, lwt.preemptive
   Modules:    Trakeva_postgresql
 
+Library trakeva_of_uri
+  Build: true
+  Install: true
+  Path: _gen/lib_dispatch
+  BuildTools: ocamlbuild
+  BuildDepends: trakeva, trakeva_postgresql, trakeva_sqlite
 
 Executable trakeva_tests
   Path: src/test/
