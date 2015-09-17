@@ -28,6 +28,7 @@ let dbg fmt = ksprintf (eprintf "Trakeva_postgresql: %s\n%!") fmt
 type t = {
   handle: PG.connection;
   table_name: string;
+  conninfo: string;
 }
 
 let dbg_handle {handle} fmt =
@@ -57,27 +58,27 @@ let default_table = "trakeva_default_table"
 
 let table_name t = t.table_name
 
+let load_exn conninfo =
+  let handle = new PG.connection ~conninfo () in
+  let table_name = default_table in
+  let res = handle#exec (create_table table_name) in
+  match res#status with
+  | PG.Command_ok ->
+    {handle; table_name; conninfo}
+  | PG.Empty_query 
+  | PG.Tuples_ok 
+  | PG.Copy_out 
+  | PG.Copy_in 
+  | PG.Bad_response 
+  | PG.Nonfatal_error 
+  | PG.Fatal_error 
+  | PG.Copy_both 
+  | PG.Single_tuple  ->
+    ksprintf failwith "Cannot create table %S: %s, %s"
+      table_name (PG.result_status res#status) res#error
 let load conninfo =
   let on_exn e = `Error (`Database (`Load conninfo, Printexc.to_string e)) in
-  in_posix_thread ~on_exn begin fun () ->
-    let handle = new PG.connection ~conninfo () in
-    let table_name = default_table in
-    let res = handle#exec (create_table table_name) in
-    match res#status with
-    | PG.Command_ok ->
-      {handle; table_name}
-    | PG.Empty_query 
-    | PG.Tuples_ok 
-    | PG.Copy_out 
-    | PG.Copy_in 
-    | PG.Bad_response 
-    | PG.Nonfatal_error 
-    | PG.Fatal_error 
-    | PG.Copy_both 
-    | PG.Single_tuple  ->
-      ksprintf failwith "Cannot create table %S: %s, %s"
-        table_name (PG.result_status res#status) res#error
-  end
+  in_posix_thread ~on_exn (fun () -> load_exn conninfo)
 
 let close {handle} =
   let on_exn e = `Error (`Database (`Close, Printexc.to_string e)) in
@@ -241,11 +242,11 @@ let get_all t ~collection =
     )
 
 
-let iterator t ~collection =
+let iterator original_t ~collection =
   let error_loc = `Iter collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   let state = ref `Not_started in
-  let next_exn cursor_name =
+  let next_exn t cursor_name =
     exec_sql_exn t [sprintf "FETCH NEXT FROM %s" cursor_name, [| |]]
     |> function
     | [`Tuples [[`Blob key]]] -> Some key
@@ -253,6 +254,7 @@ let iterator t ~collection =
       exec_unit t (sprintf "CLOSE %s" cursor_name) [| |];
       exec_unit t "END" [| |];
       state := `Closed;
+      t.handle#finish;
       None
     | other ->
       ksprintf failwith "Did not get one list of tuples for iterator.next %S"
@@ -262,6 +264,7 @@ let iterator t ~collection =
     in_posix_thread ~on_exn (fun () ->
         match !state with
         | `Not_started ->
+          let t = load_exn original_t.conninfo in
           let cursor_name = "cursrrrsors1" in
           exec_unit t "BEGIN" [| |];
           exec_unit t
@@ -269,11 +272,11 @@ let iterator t ~collection =
                       (SELECT key FROM %s WHERE collection = $1)"
                cursor_name
                t.table_name) [| `Blob collection |];
-          state := `Active cursor_name;
-          next_exn cursor_name
+          state := `Active (t, cursor_name);
+          next_exn t cursor_name
         | `Closed ->
           ksprintf failwith "Iterator already closed: %S" collection
-        | `Active cursor_name ->
-          next_exn cursor_name
+        | `Active (t, cursor_name) ->
+          next_exn t cursor_name
       )
   end
