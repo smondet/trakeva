@@ -225,61 +225,49 @@ let act t ~(action: Action.t) =
       end
     )
 
+let get_all_keys_exn t collection =
+  exec_sql_exn t [
+    sprintf "SELECT key FROM %s WHERE collection = $1 ORDER BY key"
+      t.table_name, [| `Blob collection |];
+  ] |> function
+  | [`Tuples tuples] ->
+    List.map tuples ~f:(function
+      | [`Blob k] -> k
+      | other ->
+        ksprintf failwith "Did not get one single row for get_all %S"
+          collection)
+  | other ->
+    ksprintf failwith "Did not get one list of tuples for get_all %S"
+      collection
+
 let get_all t ~collection =
   let error_loc = `Get_all collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
-  in_posix_thread ~on_exn (fun () ->
-      exec_sql_exn t [
-        sprintf "SELECT key FROM %s WHERE collection = $1 ORDER BY key"
-          t.table_name, [| `Blob collection |];
-      ] |> function
-      | [`Tuples tuples] ->
-        List.map tuples ~f:(function
-          | [`Blob k] -> k
-          | other ->
-            ksprintf failwith "Did not get one single row for get_all %S"
-              collection)
-      | other ->
-        ksprintf failwith "Did not get one list of tuples for get_all %S"
-          collection
-    )
+  in_posix_thread ~on_exn (fun () -> get_all_keys_exn t collection)
 
 
-let iterator original_t ~collection =
+let iterator t ~collection =
   let error_loc = `Iter collection in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
   let state = ref `Not_started in
-  let next_exn t cursor_name =
-    exec_sql_exn t [sprintf "FETCH NEXT FROM %s" cursor_name, [| |]]
-    |> function
-    | [`Tuples [[`Blob key]]] -> Some key
-    | [`Tuples []] ->
-      exec_unit t (sprintf "CLOSE %s" cursor_name) [| |];
-      exec_unit t "END" [| |];
+  let next_exn remaining_keys =
+    match remaining_keys with
+    | [] ->
       state := `Closed;
-      t.handle#finish;
       None
-    | other ->
-      ksprintf failwith "Did not get one list of tuples for iterator.next %S"
-        collection
+    | head :: tail ->
+      state := `Active tail;
+      Some head
   in
   begin fun () ->
     in_posix_thread ~on_exn (fun () ->
         match !state with
         | `Not_started ->
-          let t = load_exn original_t.conninfo in
-          let cursor_name = "cursrrrsors1" in
-          exec_unit t "BEGIN" [| |];
-          exec_unit t
-            (sprintf "DECLARE %s CURSOR FOR \
-                      (SELECT key FROM %s WHERE collection = $1)"
-               cursor_name
-               t.table_name) [| `Blob collection |];
-          state := `Active (t, cursor_name);
-          next_exn t cursor_name
+          let all_keys = get_all_keys_exn t collection in
+          next_exn all_keys
         | `Closed ->
           ksprintf failwith "Iterator already closed: %S" collection
-        | `Active (t, cursor_name) ->
-          next_exn t cursor_name
+        | `Active remaining_keys ->
+          next_exn remaining_keys
       )
   end
