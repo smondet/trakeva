@@ -29,6 +29,7 @@ type t = {
   handle: PG.connection;
   table_name: string;
   conninfo: string;
+  action_mutex: Lwt_mutex.t;
 }
 
 let dbg_handle {handle} fmt =
@@ -64,7 +65,8 @@ let load_exn conninfo =
   let res = handle#exec (create_table table_name) in
   match res#status with
   | PG.Command_ok ->
-    {handle; table_name; conninfo}
+    let action_mutex = Lwt_mutex.create () in
+    {handle; table_name; conninfo; action_mutex}
   | PG.Empty_query 
   | PG.Tuples_ok 
   | PG.Copy_out 
@@ -207,20 +209,21 @@ let act t ~(action: Action.t) =
   in
   let error_loc = `Act action in
   let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
-  (* Lwt_mutex.with_lock t.action_mutex (fun () ->  *)
-  in_posix_thread ~on_exn begin fun () ->
-    exec_unit t "BEGIN" [| |];
-    exec_unit t
-      (sprintf "LOCK TABLE %s IN ACCESS EXCLUSIVE MODE" t.table_name) [| |];
-    begin match transact action with
-    | false ->
-      exec_unit t "ROLLBACK" [| |];
-      `Not_done
-    | true ->
-      exec_unit t "END" [| |];
-      `Done
-    end
-  end
+  Lwt_mutex.with_lock t.action_mutex (fun () ->
+      in_posix_thread ~on_exn begin fun () ->
+        exec_unit t "BEGIN" [| |];
+        exec_unit t
+          (sprintf "LOCK TABLE %s IN ACCESS EXCLUSIVE MODE" t.table_name) [| |];
+        begin match transact action with
+        | false ->
+          exec_unit t "ROLLBACK" [| |];
+          `Not_done
+        | true ->
+          exec_unit t "END" [| |];
+          `Done
+        end
+      end
+    )
 
 let get_all t ~collection =
   let error_loc = `Get_all collection in

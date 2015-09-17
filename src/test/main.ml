@@ -457,8 +457,10 @@ let pg_server () =
   cmdf "mkdir -p %s" dir;
   cmdf "initdb -D %s" dir;
   cmdf "PGPORT=%d pg_ctl start -l %s/log -D %s" port dir dir;
+  let stop () = cmdf "PGPORT=%d pg_ctl -D %s -m fast stop" port dir in
+  at_exit stop;
   object
-    method stop = cmdf "PGPORT=%d pg_ctl -D %s -m fast stop" port dir
+    method stop = stop ()
     method status = cmdf "PGPORT=%d pg_ctl -D %s status" port dir
     method port = port
     method conninfo = sprintf "postgresql:///template1?port=%d" port
@@ -628,6 +630,8 @@ let find_arg argl ~name ~convert =
 let () =
   let argl = Sys.argv |> Array.to_list |> List.tl_exn in
 
+  (* independent_pg_test (); *)
+  
   let sqlite_path = "/tmp/trakeva-sqlite-test" in
   ksprintf Sys.command "rm -fr %s" sqlite_path |> ignore;
   Test.run_monad "basic/sqlite" (basic_test (module Test_sqlite) sqlite_path);
