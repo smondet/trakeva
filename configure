@@ -1,0 +1,37 @@
+#! /usr/bin/env bash
+
+of_uri_dependencies="trakeva"
+
+if [ "$1" = "--enable-sqlite" ]; then
+    sqlite="true"
+    of_uri_dependencies="$of_uri_dependencies, trakeva_sqlite"
+else
+    sqlite="false"
+fi
+if [ "$2" = "--enable-postgresql" ]; then
+    postgresql="true"
+    of_uri_dependencies="$of_uri_dependencies, trakeva_postgresql"
+else
+    postgresql="false"
+fi
+if [ "$3" = "--enable-test" ]; then
+    test="true"
+else
+    test="false"
+fi
+prefix=$4
+
+set -e
+
+cat tools/oasis.in | \
+    sed "s/%%build-sqlite%%/$sqlite/" | \
+    sed "s/%%build-postgresql%%/$postgresql/" | \
+    sed "s/%%of-uri-dependencies%%/$of_uri_dependencies/" > _oasis
+
+./tools/codegen.sh $sqlite $postgresql
+
+oasis setup -setup-update dynamic
+
+ocaml setup.ml -configure --prefix $prefix $3
+
+echo "Configured: SQLITE: $sqlite, POSTGRES: $postgresql, TESTS: $test, PREFIX: $prefix"

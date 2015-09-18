@@ -4,9 +4,7 @@
 all: build
 
 configure: distclean
-	oasis setup -setup-update dynamic && \
-	    ocaml setup.ml -configure --enable-all && \
-	    echo 'Configured'
+	./configure --enable-sqlite --enable-postgresql --enable-test /tmp/usr/
 
 build:
 	ocaml setup.ml -build && \
@@ -37,4 +35,5 @@ clean:
 
 distclean: clean
 	ocaml setup.ml -distclean || echo OK ; \
-	    rm -f setup.ml _tags myocamlbuild.ml src/*/META src/*/*.mldylib src/*/*.mllib
+	    rm -fr gen/ ; \
+	    rm -f setup.ml _tags myocamlbuild.ml src/*/META src/*/*.mldylib src/*/*.mllib _oasis

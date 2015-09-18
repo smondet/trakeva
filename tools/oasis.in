@@ -5,23 +5,10 @@ Synopsis:    Transactions, Keys, and Values: Common interface to various databas
 Authors:     Sebastien Mondet <seb@mondet.org>
 License:     Apache-2.0
 Plugins:     META (0.4)
-PreBuildCommand: ./tools/codegen.sh $sqlite $postgresql
-
-Flag all
-  Description: build and install everything
-  Default: false
-
-Flag sqlite
-  Description: Build the Sqlite backend
-  Default$: flag(all)
-
-Flag postgresql
-  Description: Build the Postgresql backend
-  Default$: flag(all)
 
 Flag test
   Description: Build the Tests (requires Sosa)
-  Default$: flag(all)
+  Default$: false
 
 Library trakeva
   Path:       src/lib
@@ -30,35 +17,35 @@ Library trakeva
   Modules:    Trakeva, Trakeva_cache
 
 Library trakeva_sqlite
-  Build$: flag(sqlite) || flag(all) || flag(test)
-  Install$: flag(sqlite) || flag(all)
+  Build$: %%build-sqlite%% || flag(test)
+  Install$: %%build-sqlite%%
   Path:       src/lib_sqlite
   BuildTools: ocamlbuild
   BuildDepends: trakeva, sqlite3, lwt.preemptive
   Modules:    Trakeva_sqlite
 
 Library trakeva_postgresql
-  Build$: flag(postgresql) || flag(all) || flag(test)
-  Install$: flag(postgresql) || flag(all)
+  Build$: %%build-postgresql%% || flag(test)
+  Install$: %%build-postgresql%%
   Path:       src/lib_postgresql
   BuildTools: ocamlbuild
   BuildDepends: trakeva, postgresql, lwt.preemptive
   Modules:    Trakeva_postgresql
 
 Library trakeva_of_uri
-  Build: true
-  Install: true
-  Path: _gen/lib_dispatch
+  Build$: true
+  Install$: true
+  Path: gen/lib_of_uri
   BuildTools: ocamlbuild
-  BuildDepends: trakeva, trakeva_postgresql, trakeva_sqlite
+  BuildDepends: %%of-uri-dependencies%%
+  Modules:    Trakeva_of_uri
 
 Executable trakeva_tests
   Path: src/test/
   BuildTools: ocamlbuild
   CompiledObject: best
-  BuildDepends: trakeva, trakeva_sqlite, trakeva_postgresql, sosa
-  Build$: flag(postgresql) || flag(sqlite) || flag(all) || flag(test)
-  Install$: flag(postgresql) || flag(sqlite) || flag(all)
+  BuildDepends: trakeva, trakeva_sqlite, trakeva_postgresql, trakeva_of_uri, sosa
+  Build$: flag(test)
   Install: false
   MainIs:     main.ml
 
