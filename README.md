@@ -12,6 +12,10 @@ DB implementation of the module type `Trakeva.KEY_VALUE_STORE`:
   [Sqlite3-ocaml](http://mmottl.github.io/sqlite3-ocaml/).
 - `Trakeva_postgresql` (in the separate library `trakeva_postgresql`) uses
   [`postgresql-ocaml`](http://mmottl.github.io/postgresql-ocaml/)
+- `Trakeva_of_uri` (in the separate library `trakeva_of_uri`) uses
+  chooses dynamically between the 2 backends above thanks to the URI passed to
+  the `Trakeva_of_uri.load` function. The backends are optionally compiled so
+  they might be missing;`load` would then throw an exception.
 
 There is also a very basic in “in-memory” cache functor, adding a cache layer on
 top of any key-value DB, cf. `Trakeva_cache`.
