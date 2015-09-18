@@ -1,6 +1,6 @@
 #! /usr/bin/env bash
 
-of_uri_dependencies="trakeva"
+of_uri_dependencies="trakeva, uri"
 
 if [ "$1" = "--enable-sqlite" ]; then
     sqlite="true"
