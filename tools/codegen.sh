@@ -47,15 +47,16 @@ type t = {
 }
 let load s =
   let uri = Uri.of_string s in
-  let backend =
+  let backend, load_parameters =
      match Uri.scheme uri with
-     | Some "postgresql" -> (module Postgresql : Trakeva.KEY_VALUE_STORE)
-     | Some "sqlite" | None -> (module Sqlite : Trakeva.KEY_VALUE_STORE)
+     | Some "postgresql" -> ((module Postgresql : Trakeva.KEY_VALUE_STORE), s)
+     | Some "sqlite" | None ->
+       ((module Sqlite : Trakeva.KEY_VALUE_STORE), Uri.path uri)
      | Some other ->
        Printf.ksprintf failwith "Can't recognize URI scheme: %S" other
    in
    let module KV = (val backend) in
-   KV.load s
+   KV.load load_parameters
    >>= fun backend_handle ->
    let module Implementation = struct
      type i = t
