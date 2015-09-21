@@ -441,7 +441,7 @@ end
 
 module Test_postgresql = struct
   let test_name = "Test_postgresql" 
-  module DB = Trakeva_postgresql
+  module DB = Trakeva_of_uri
   let debug_mode v = Trakeva_postgresql.debug := v
 end
 
@@ -561,7 +561,6 @@ let independent_pg_test () =
           >>= fun () ->
           let tab = Trakeva_postgresql.table_name trak in
           execl [sprintf "SELECT collection, key, value FROM %s WHERE collection = $1 or ($1 is null AND collection is null)" tab, [`Null];];
-          Trakeva_postgresql.debug := true;
           Trakeva_postgresql.act trak  (seq [
               set ~collection:"C" ~key:"K"  "\000";
               set ~collection:"C" ~key:"K1" "\000";
@@ -609,8 +608,6 @@ let independent_pg_test () =
   | PG.Error e -> say "Error: %s" (PG.string_of_error e)
   | e -> say "Exn: %s" (Printexc.to_string e)
   end;
-  say "STOPPING";
-  pg#stop;
   say "EXITING";
   exit 0
 (*
@@ -643,7 +640,7 @@ let () =
     let pg = pg_server () in
     Unix.sleep 1;
     Test.run_monad "basic/postgres" (basic_test (module Test_postgresql) pg#conninfo);
-    pg#stop;
+    (* pg#stop; *)
   end;
 
   if has_arg argl ["bench"; "benchmarks"] then (

@@ -4,9 +4,7 @@
 all: build
 
 configure: distclean
-	oasis setup -setup-update dynamic && \
-	    ocaml setup.ml -configure --enable-all && \
-	    echo 'Configured'
+	./configure --enable-sqlite --enable-postgresql --enable-test /tmp/usr/
 
 build:
 	ocaml setup.ml -build && \
@@ -15,12 +13,15 @@ build:
 
 apidoc:
 	mkdir -p _apidoc && \
-	ocamlfind ocamldoc -html -d _apidoc/ -package nonstd,pvem_lwt_unix,sqlite3,sosa  \
+	ocamlfind ocamldoc -html -d _apidoc/ \
+            -package nonstd,pvem_lwt_unix,sqlite3,postgresql,sosa  \
 	    -thread  -charset UTF-8 -t "Trakeva API" -keep-code -colorize-code \
 	    -sort \
 	    -I _build/src/lib/ \
 	    -I _build/src/lib_sqlite/ \
-	    src/*/*.mli src/*/*.ml
+	    -I _build/src/lib_postgresql/ \
+	    -I _build/gen/lib_of_uri/ \
+	    src/*/*.mli src/*/*.ml gen/*/*.mli
 
 doc: apidoc build
 	INPUT=src/doc/ \
@@ -37,4 +38,5 @@ clean:
 
 distclean: clean
 	ocaml setup.ml -distclean || echo OK ; \
-	    rm -f setup.ml _tags myocamlbuild.ml src/*/META src/*/*.mldylib src/*/*.mllib
+	    rm -fr gen/ ; \
+	    rm -f setup.ml _tags myocamlbuild.ml src/*/META src/*/*.mldylib src/*/*.mllib _oasis

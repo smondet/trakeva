@@ -5,10 +5,11 @@ maintainer: "Sebastien Mondet <seb@mondet.org>"
 authors: [ "Sebastien Mondet <seb@mondet.org>" ]
 license: "Apache-2.0"
 build: [
-  ["oasis" "setup"]
-  ["ocaml" "setup.ml" "-configure" "--prefix" prefix
+  ["./configure" 
     "--%{sqlite3:enable}%-sqlite"
-    "--%{postgresql:enable}%-postgresql"]
+    "--%{postgresql:enable}%-postgresql"
+    "--disable-test"
+    prefix]
   ["ocaml" "setup.ml" "-build"]
 ]
 install: ["ocaml" "setup.ml" "-install"]
@@ -16,6 +17,7 @@ remove: [
   ["ocamlfind" "remove" "trakeva"]
   ["ocamlfind" "remove" "trakeva_sqlite"]
   ["ocamlfind" "remove" "trakeva_postgresql"]
+  ["ocamlfind" "remove" "trakeva_of_uri"]
 ]
 depends: [
   "base-threads"
@@ -23,6 +25,7 @@ depends: [
   "oasis" {build & >= "0.4"}
   "ocamlfind" {build}
   "pvem_lwt_unix"
+  "uri"
 ]
 depopts: [
   "postgresql"
