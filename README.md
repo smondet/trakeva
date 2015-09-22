@@ -35,12 +35,7 @@ If the packages `sqlite3` and/or `postgresql` are installed, then the libraries
 too.
 
 
-To get the development version you can use
-
-    opam remote add smondet https://github.com/smondet/dev-opam-repo.git
-    opam update
-
-or from the repository, just run:
+To build the development version from the repository, just run:
 
     make configure
     make
