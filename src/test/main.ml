@@ -638,9 +638,14 @@ let () =
   Test.run_monad "basic/sqlite-with-cache" (basic_test (module Test_sqlite_with_greedy_cache) sqlite_path);
 
   begin
-    let pg = pg_server () in
-    Unix.sleep 1;
-    Test.run_monad "basic/postgres" (basic_test (module Test_postgresql) pg#conninfo);
+    let conninfo =
+      try Sys.getenv "POSTGRESQL_CONNECTION_INFO"
+      with _ ->
+        let pg = pg_server () in
+        Unix.sleep 1;
+        pg#conninfo
+    in
+    Test.run_monad "basic/postgres" (basic_test (module Test_postgresql) conninfo);
     (* pg#stop; *)
   end;
 

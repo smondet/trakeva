@@ -55,6 +55,8 @@ To run the unit tests:
 
 The main test starts a temporary Postgresql server on port `4242`, this can be
 overridden with the environment variable `POSTGRESQL_PORT`.
+To use an existing database server instead of creating one use the variable
+`POSTGRESQL_CONNECTION_INFO`.
 
 To run the benchmarks:
 
