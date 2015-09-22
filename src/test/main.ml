@@ -452,11 +452,12 @@ let pg_server () =
         if ret = 0 then () else failwith (sprintf "command %S returned %d" s ret)
       ) fmt in
   let dir =  "/tmp/trakeva_test/" in
-  let port = 4242 in
+  let port = try Sys.getenv "POSTGRESQL_PORT" |> int_of_string with _ -> 4242 in
   cmdf "rm -fr %s" dir;
   cmdf "mkdir -p %s" dir;
   cmdf "initdb -D %s" dir;
   cmdf "PGPORT=%d pg_ctl start -l %s/log -D %s" port dir dir;
+  say "Starting postgresql test server on port %d with %s" port dir;
   let stop () = cmdf "PGPORT=%d pg_ctl -D %s -m fast stop" port dir in
   at_exit stop;
   object

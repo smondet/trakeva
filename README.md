@@ -53,6 +53,9 @@ To run the unit tests:
 
     ./trakeva_tests
 
+The main test starts a temporary Postgresql server on port `4242`, this can be
+overridden with the environment variable `POSTGRESQL_PORT`.
+
 To run the benchmarks:
 
     ./trakeva_tests bench collection=100 kb=5     # quick bench
