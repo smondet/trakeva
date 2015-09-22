@@ -78,12 +78,17 @@ let load_exn conninfo =
   | PG.Single_tuple  ->
     ksprintf failwith "Cannot create table %S: %s, %s"
       table_name (PG.result_status res#status) res#error
+
+let exn_to_string = function
+  | PG.Error e -> sprintf "Postgres-Error: %s" (PG.string_of_error e)
+  | e -> sprintf "Exn: %s" (Printexc.to_string e)
+
 let load conninfo =
-  let on_exn e = `Error (`Database (`Load conninfo, Printexc.to_string e)) in
+  let on_exn e = `Error (`Database (`Load conninfo, exn_to_string e)) in
   in_posix_thread ~on_exn (fun () -> load_exn conninfo)
 
 let close {handle} =
-  let on_exn e = `Error (`Database (`Close, Printexc.to_string e)) in
+  let on_exn e = `Error (`Database (`Close, exn_to_string e)) in
   in_posix_thread ~on_exn begin fun () ->
     handle#finish
   end
@@ -173,7 +178,7 @@ let get_exn ?collection t ~key =
 
 let get ?collection t ~key =
   let error_loc = (Key_in_collection.create key ?collection) in
-  let on_exn e = `Error (`Database (`Get error_loc , Printexc.to_string e)) in
+  let on_exn e = `Error (`Database (`Get error_loc , exn_to_string e)) in
   in_posix_thread ~on_exn (fun () ->
       get_exn ?collection t ~key
     )
@@ -208,7 +213,7 @@ let act t ~(action: Action.t) =
       opt = got_opt
   in
   let error_loc = `Act action in
-  let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
+  let on_exn e = `Error (`Database (error_loc , exn_to_string e)) in
   Lwt_mutex.with_lock t.action_mutex (fun () ->
       in_posix_thread ~on_exn begin fun () ->
         exec_unit t "BEGIN" [| |];
@@ -242,13 +247,13 @@ let get_all_keys_exn t collection =
 
 let get_all t ~collection =
   let error_loc = `Get_all collection in
-  let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
+  let on_exn e = `Error (`Database (error_loc , exn_to_string e)) in
   in_posix_thread ~on_exn (fun () -> get_all_keys_exn t collection)
 
 
 let iterator t ~collection =
   let error_loc = `Iter collection in
-  let on_exn e = `Error (`Database (error_loc , Printexc.to_string e)) in
+  let on_exn e = `Error (`Database (error_loc , exn_to_string e)) in
   let state = ref `Not_started in
   let next_exn remaining_keys =
     match remaining_keys with
