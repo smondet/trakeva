@@ -22,7 +22,7 @@ module String = StringLabels
 let debug = ref false
 
 let dbg fmt = ksprintf (eprintf "Trakeva_cache: %s\n%!") fmt
-    
+
 module Greedy_cache = struct
 
   type t = {
@@ -36,7 +36,7 @@ module Greedy_cache = struct
   let from_collection c key =
     try Some (Hashtbl.find c key)
     with _ -> None
-    
+
   let new_collection t collection =
     let col = Hashtbl.create 42 in
     Hashtbl.add t.collections collection col;
@@ -60,7 +60,7 @@ end
 module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
 
   let default_collection_name = "trakeva-greedy-cache-default-collection"
-    
+
   type t = {
     original: KV_DB.t;
     cache: Greedy_cache.t;
@@ -76,8 +76,6 @@ module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
 
   open Trakeva.Action
   open Trakeva.Key_in_collection
-  let _key ?collection key = {key; collection}
-
 
   let cache_collection t ~collection =
     if !debug then dbg "cache_collection %s" collection;
@@ -101,7 +99,7 @@ module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
       return col
 
   let get ?(collection = default_collection_name) t ~key =
-    Lwt_mutex.with_lock t.mutex (fun () -> 
+    Lwt_mutex.with_lock t.mutex (fun () ->
         cache_collection t ~collection
         >>= fun col ->
         return (Greedy_cache.from_collection col key)
@@ -109,11 +107,11 @@ module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
     >>< function
     | `Ok o -> return o
     | `Error (`Database (`Get_all _, s_)) ->
-      fail (`Database (`Get (_key ~collection key), s_))
+      fail (`Database (`Get (create ~collection key), s_))
     | `Error (`Database (`Get _,_) as e) -> fail e
 
   let get_all t ~collection =
-    Lwt_mutex.with_lock t.mutex (fun () -> 
+    Lwt_mutex.with_lock t.mutex (fun () ->
         cache_collection t ~collection
         >>= fun col ->
         if !debug then dbg "get_all %s" collection;
@@ -146,7 +144,7 @@ module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
       end
       >>< function
       | `Ok o -> return o
-      | `Error (`Database (`Get_all _, s_)) -> 
+      | `Error (`Database (`Get_all _, s_)) ->
         fail (`Database (`Iter collection, sprintf "get-all %s: %s" collection s_))
       | `Error (`Database (`Get { key; _ }, s_)) ->
         fail (`Database (`Iter collection, sprintf "getting %s: %s" key s_))
@@ -186,7 +184,7 @@ module Add (KV_DB: Trakeva.KEY_VALUE_STORE): Trakeva.KEY_VALUE_STORE = struct
       | `Not_done -> return `Not_done
     end >>< function
     | `Ok o -> return o
-    | `Error (`Database (`Get_all collection, s_)) -> 
+    | `Error (`Database (`Get_all collection, s_)) ->
       fail (`Database (`Act action, sprintf "get-all %s: %s" collection s_))
     | `Error (`Database (`Get { key; _ }, s_)) ->
       fail (`Database (`Act action, sprintf "getting %s: %s" key s_))
