@@ -28,15 +28,18 @@ module Trakeva_missing : Trakeva.KEY_VALUE_STORE = struct
    let iterator _ = assert false
    let close _ = assert false
 end
+let available_backends = []
 EOBLOB
 
 if [ "$sqlite" = "true" ]; then
     echo "module Sqlite = Trakeva_sqlite" >> $lib_ml
+    echo "let available_backends = \"sqlite\" :: available_backends" >> $lib_ml
 else
     echo "module Sqlite = Trakeva_missing" >> $lib_ml
 fi
 if [ "$postgresql" = "true" ]; then
     echo "module Postgresql = Trakeva_postgresql" >> $lib_ml
+    echo "let available_backends = \"postgresql\" :: available_backends" >> $lib_ml
 else
     echo "module Postgresql = Trakeva_missing" >> $lib_ml
 fi
@@ -85,7 +88,6 @@ let iterator t ~collection =
 let act t ~action = 
   let module KV = (val t.implementation) in
   KV.act t ~action
-
 EOBLOB
 
 
@@ -101,8 +103,11 @@ The function [create] takes a URI string:
   then {!Trakeva_postgresql} will be used,
 - if the URI scheme is ["sqlite"], or there is no scheme, then
   {!Trakeva_sqlite} will be used,
-- an exxception is raised for other schemes (reserved for future use).
+- an exception is raised for other schemes (reserved for future use).
 
 *)
   include Trakeva.KEY_VALUE_STORE
+
+  val available_backends : string list
+  (** The databases that are available via [create] *)
 EOBLOB
