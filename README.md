@@ -5,7 +5,7 @@ Transactions, Keys, and Values: an attempt at a generic interface for
 transactional key-value stores with different backends.
 
 
-The interfaces are defined in the [Trakeva](src/lib/trakeva.ml) module.
+The interfaces are defined in the [Trakeva](src/lib/trakeva.mli) module.
 We have, for now, one DB implementation of the module type `Trakeva.KEY_VALUE_STORE`:
 
 - `Trakeva_sqlite` (in the separate library `trakeva_sqlite`) uses
