@@ -210,8 +210,10 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
   local_assert "full collection 'c'"
     (List.sort ~cmp:String.compare list = ["k1"; "k2"; "k3"; "k4"; "k5"]);
   let key = "K" in
-  let insane = String.make 256 '\000' in
-  for i = 0 to 255 do String.mutate_exn insane i (char_of_int i) done;
+  let insane =
+    let buf = Bytes.make 256 '\000' in
+    for i = 0 to 255 do Bytes.set buf i (char_of_int i) done;
+    Bytes.to_string buf in
   test_actions `Done [
     set ~key "\"";
     set ~key "\\\"";

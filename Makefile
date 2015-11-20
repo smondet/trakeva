@@ -7,7 +7,7 @@ configure: distclean
 	./configure --enable-sqlite --enable-postgresql --enable-test /tmp/usr/
 
 build:
-	ocaml setup.ml -build && \
+	ocaml setup.ml -build -cflag -safe-string && \
 	    rm -f main.byte main.native  && \
 	    mv _build/src/test/main.native trakeva_tests
 
