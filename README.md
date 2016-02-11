@@ -20,8 +20,8 @@ We have, for now, one DB implementation of the module type `Trakeva.KEY_VALUE_ST
 There is also a very basic in “in-memory” cache functor, adding a cache layer on
 top of any key-value DB, cf. `Trakeva_cache`.
 
-This is Trakeva `0.0.0+master`, see also the repository
-[`smondet/trakeva`](https://github.com/smondet/trakeva) for issues/questions.
+See also the repository [`smondet/trakeva`](https://github.com/smondet/trakeva)
+for issues/questions.
 
 Build
 -----
