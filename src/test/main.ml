@@ -179,6 +179,8 @@ let basic_test (module Test_db : TEST_DATABASE) uri_string () =
       ksprintf Test.fail "Action %s should be Done" (to_string action);
       return ()
   in
+  test_actions `Done [set ~key:"k" "v0"] >>= fun () ->
+  test_get  "k" ((=) (Some "v0")) >>= fun () ->
   test_actions `Done [set ~key:"k" "v"] >>= fun () ->
   test_get  "k" ((=) (Some "v")) >>= fun () ->
   test_actions `Done [
