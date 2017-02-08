@@ -56,12 +56,19 @@ let create_table t =
            (collection BYTEA, key BYTEA, value BYTEA, \
            UNIQUE (collection, key))" t
 let default_table = "trakeva_default_table"
+let table_name_parameter = "trakeva-table"
 
 let table_name t = t.table_name
 
-let load_exn conninfo =
+let load_exn meta_conninfo =
+  let uri = Uri.of_string meta_conninfo in
+  let table_name =
+    Uri.get_query_param uri table_name_parameter
+    |> Option.value ~default:default_table
+  in
+  let conninfo =
+    Uri.remove_query_param uri table_name_parameter |> Uri.to_string in
   let handle = new PG.connection ~conninfo () in
-  let table_name = default_table in
   let res = handle#exec (create_table table_name) in
   match res#status with
   | PG.Command_ok ->

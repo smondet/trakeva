@@ -21,7 +21,9 @@
 
 The function [create] takes a “[conninfo]” URI string,
 cf.
-{{:http://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING}documentation}.
+{{:http://www.postgresql.org/docs/9.4/static/libpq-connect.html#LIBPQ-CONNSTRING}documentation},
+with one additional query parameter ["trakeva-table"] which tells the backend
+to store the values in the given SQL table (default: ["trakeva_default_table"]).
 
 *)
 

@@ -57,16 +57,31 @@ let escape_blob s =
 
 let default_table = "trakeva_default_table"
 
+let none_blob = "trakeva_none_collection"
+
+let option_equals =
+  function
+  | None -> sprintf "= %s" (escape_blob none_blob)
+  | Some s -> sprintf "= %s" (escape_blob s)
+
+let option_insert =
+  function
+  | None -> escape_blob none_blob
+  | Some s -> escape_blob s
+
+let validate_collection =
+  function
+  | None -> ()
+  | Some c when c = none_blob ->
+    ksprintf
+      failwith "The collection name %s is reserved by Trakeva_sqlite" none_blob
+  | Some _ -> ()
+
 (* https://www.sqlite.org/lang_createtable.html *)
 let create_table t =
   sprintf "CREATE TABLE IF NOT EXISTS %s \
            (collection BLOB, key BLOB, value BLOB, \
            PRIMARY KEY(collection, key) ON CONFLICT REPLACE)" t
-
-let option_equals =
-  function
-  | None -> "IS NULL"
-  | Some s -> sprintf "= %s" (escape_blob s)
 
 let get_statement table collection key =
   sprintf "SELECT value FROM %s WHERE key = %s AND collection %s" table
@@ -87,7 +102,7 @@ https://www.sqlite.org/lang_insert.html
 let set_statement table collection key value =
   sprintf "INSERT OR REPLACE INTO %S (collection, key, value) VALUES (%s, %s, %s)"
     table
-    (match collection with None -> "NULL" | Some s -> escape_blob s)
+    (option_insert collection)
     (escape_blob key) (escape_blob value)
 
 (* https://www.sqlite.org/lang_delete.html *)
@@ -253,15 +268,18 @@ let act t ~(action: Action.t) =
     let open Action in
     match action with
     | Set ({ key; collection }, value) ->
+      validate_collection collection;
       let statement = set_statement default_table collection key value in
       exec_unit_exn t.handle statement;
       true
     | Unset { key; collection } ->
+      validate_collection collection;
       let statement = unset_statement default_table collection key in
       exec_unit_exn t.handle statement;
       true
     | Sequence l -> List.for_all l ~f:transact
     | Check ({ key; collection }, opt) ->
+      validate_collection collection;
       let statement = get_statement default_table collection key in
       exec_option_exn t.handle statement = opt
   in

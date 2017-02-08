@@ -29,7 +29,7 @@ Library trakeva_postgresql
   Install$: %%build-postgresql%%
   Path:       src/lib_postgresql
   BuildTools: ocamlbuild
-  BuildDepends: trakeva, postgresql, lwt.preemptive
+  BuildDepends: trakeva, uri, postgresql, lwt.preemptive
   Modules:    Trakeva_postgresql
 
 Library trakeva_of_uri
