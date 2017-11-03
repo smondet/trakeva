@@ -6,7 +6,7 @@ transactional key-value stores with different backends.
 
 
 The interfaces are defined in the [Trakeva](src/lib/trakeva.mli) module.
-We have, for now, one DB implementation of the module type `Trakeva.KEY_VALUE_STORE`:
+We have, for now, the following implementations of the module type `Trakeva.KEY_VALUE_STORE`:
 
 - `Trakeva_sqlite` (in the separate library `trakeva_sqlite`) uses
   [Sqlite3-ocaml](http://mmottl.github.io/sqlite3-ocaml/).
